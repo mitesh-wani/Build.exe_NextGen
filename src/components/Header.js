@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { AppBar, Toolbar, Typography, Button, Box, Container } from '@mui/material';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom'; // Added useLocation
 import { auth } from '../firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import ConstructionIcon from '@mui/icons-material/Construction';
@@ -8,6 +8,7 @@ import ConstructionIcon from '@mui/icons-material/Construction';
 function Header() {
   const [user, setUser] = useState(null);
   const navigate = useNavigate();
+  const location = useLocation(); // Hook to get current page path
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -20,6 +21,11 @@ function Header() {
     await signOut(auth);
     navigate('/');
   };
+
+  // HIDE HEADER IF ON ADMIN DASHBOARD
+  if (location.pathname === '/admin') {
+    return null; 
+  }
 
   return (
     <AppBar position="static" color="default" elevation={1} sx={{ bgcolor: 'white' }}>
