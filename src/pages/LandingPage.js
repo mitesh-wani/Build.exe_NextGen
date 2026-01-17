@@ -1,439 +1,302 @@
-<<<<<<< HEAD
 import React from 'react';
 import { 
-  Container, Typography, Button, Box, Grid, Paper, Card, CardContent, Avatar 
+  Container, Typography, Button, Box, Grid, Paper, Card, Avatar, useTheme, useMediaQuery 
 } from '@mui/material';
 import { Link } from 'react-router-dom';
-import { styled } from '@mui/material/styles';
+import { styled, keyframes } from '@mui/material/styles';
 
 // Icons
-import ReportProblemIcon from '@mui/icons-material/ReportProblem'; // Snap
-import AutoGraphIcon from '@mui/icons-material/AutoGraph';       // Analyze
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';   // Resolve
+import AutoGraphIcon from '@mui/icons-material/AutoGraph';       
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';   
 import CameraAltIcon from '@mui/icons-material/CameraAlt';
 import BoltIcon from '@mui/icons-material/Bolt';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import SecurityIcon from '@mui/icons-material/Security';
 
-// Custom Styled Components for "Advanced" Look
+// --- ANIMATIONS ---
+const float = keyframes`
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-20px); }
+  100% { transform: translateY(0px); }
+`;
+
+const pulse = keyframes`
+  0% { box-shadow: 0 0 0 0 rgba(25, 118, 210, 0.4); }
+  70% { box-shadow: 0 0 0 10px rgba(25, 118, 210, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(25, 118, 210, 0); }
+`;
+
+// --- STYLED COMPONENTS ---
 const HeroSection = styled(Box)(({ theme }) => ({
-  background: 'linear-gradient(135deg, #0d47a1 0%, #1976d2 100%)',
+  background: 'linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%)', // Deep modern blue-dark
   color: '#fff',
-  paddingTop: theme.spacing(12),
-  paddingBottom: theme.spacing(12),
-  clipPath: 'polygon(0 0, 100% 0, 100% 85%, 0 100%)', // Angled bottom edge
+  paddingTop: theme.spacing(15),
+  paddingBottom: theme.spacing(15),
   position: 'relative',
-  overflow: 'hidden'
+  overflow: 'hidden',
+  clipPath: 'polygon(0 0, 100% 0, 100% 90%, 0 100%)',
+}));
+
+const GlassCard = styled(Paper)(({ theme }) => ({
+  background: 'rgba(255, 255, 255, 0.8)',
+  backdropFilter: 'blur(10px)',
+  borderRadius: theme.spacing(3),
+  padding: theme.spacing(4),
+  boxShadow: '0 8px 32px 0 rgba(31, 38, 135, 0.15)',
+  border: '1px solid rgba(255, 255, 255, 0.18)',
 }));
 
 const FeatureCard = styled(Card)(({ theme }) => ({
   height: '100%',
-  transition: 'transform 0.3s ease-in-out, box-shadow 0.3s ease',
+  background: '#fff',
+  transition: 'all 0.4s ease',
+  borderRadius: theme.spacing(3),
+  textAlign: 'center',
+  padding: theme.spacing(3),
+  position: 'relative',
+  zIndex: 1,
+  border: '1px solid transparent',
   '&:hover': {
     transform: 'translateY(-10px)',
-    boxShadow: theme.shadows[10],
+    boxShadow: '0 20px 40px rgba(0,0,0,0.1)',
+    borderColor: theme.palette.primary.light,
   },
-  borderRadius: theme.spacing(2),
-  textAlign: 'center',
-  padding: theme.spacing(2),
 }));
+
+const GradientText = styled(Typography)({
+  background: 'linear-gradient(45deg, #2196F3 30%, #21CBF3 90%)',
+  WebkitBackgroundClip: 'text',
+  WebkitTextFillColor: 'transparent',
+  fontWeight: 800,
+});
 
 const StatBox = styled(Box)(({ theme }) => ({
   textAlign: 'center',
-  padding: theme.spacing(2),
-  color: '#1976d2', 
-  '& h3': { fontWeight: 'bold', fontSize: '2.5rem', marginBottom: 0 },
-  '& p': { color: '#666', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '1px' }
-}));
-=======
-import React, { useEffect, useState } from "react";
-import {
-  Container, Typography, Button, Box, Grid, Paper,
-  Card, Avatar, Skeleton
-} from "@mui/material";
-import { Link } from "react-router-dom";
-import { styled } from "@mui/material/styles";
-import { collection, onSnapshot } from "firebase/firestore";
-import { db } from "../firebase";
-
-// Icons
-import CameraAltIcon from "@mui/icons-material/CameraAlt";
-import AutoGraphIcon from "@mui/icons-material/AutoGraph";
-import CheckCircleIcon from "@mui/icons-material/CheckCircle";
-import BoltIcon from "@mui/icons-material/Bolt";
-import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
-import SecurityIcon from "@mui/icons-material/Security";
-
-/* ================= STYLED COMPONENTS ================= */
-
-const HeroSection = styled(Box)(({ theme }) => ({
-  background: "linear-gradient(135deg, #0d47a1 0%, #1976d2 100%)",
-  color: "#fff",
-  paddingTop: theme.spacing(12),
-  paddingBottom: theme.spacing(12),
-  clipPath: "polygon(0 0, 100% 0, 100% 85%, 0 100%)",
-  position: "relative",
-  overflow: "hidden"
-}));
-
-const FeatureCard = styled(Card)(({ theme }) => ({
-  height: "100%",
-  transition: "all 0.3s ease",
-  "&:hover": {
-    transform: "translateY(-8px)",
-    boxShadow: theme.shadows[10]
+  padding: theme.spacing(1),
+  '& h3': { 
+    fontWeight: '800', 
+    fontSize: '2.8rem', 
+    marginBottom: 0,
+    background: 'linear-gradient(to right, #1976d2, #42a5f5)',
+    WebkitBackgroundClip: 'text',
+    WebkitTextFillColor: 'transparent',
   },
-  borderRadius: theme.spacing(2),
-  textAlign: "center",
-  padding: theme.spacing(3)
+  '& p': { color: '#555', fontSize: '0.85rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1.2px' }
 }));
 
-const StatBox = styled(Box)(({ theme }) => ({
-  textAlign: "center",
-  padding: theme.spacing(2),
-  "& h3": { fontWeight: 800, fontSize: "2.4rem", color: "#1976d2" },
-  "& p": {
-    color: "#555",
-    fontSize: "0.8rem",
-    textTransform: "uppercase",
-    letterSpacing: "1px"
-  }
+const StepConnector = styled(Box)(({ theme }) => ({
+  position: 'absolute',
+  top: '40px',
+  left: '50%',
+  width: '100%',
+  height: '2px',
+  borderTop: '2px dashed #e0e0e0',
+  zIndex: 0,
+  display: 'none',
+  [theme.breakpoints.up('md')]: {
+    display: 'block',
+  },
 }));
 
-/* ================= COMPONENT ================= */
-
-export default function LandingPage() {
-  const [stats, setStats] = useState(null);
-
-  /* ===== REAL-TIME STATS FROM FIRESTORE ===== */
-  useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, "issues"), (snapshot) => {
-      let total = snapshot.size;
-      let resolved = 0;
-      let totalResolutionTime = 0;
-      let resolvedCount = 0;
-
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        if (data.status === "resolved" && data.createdAt && data.resolvedAt) {
-          resolved++;
-          resolvedCount++;
-          totalResolutionTime +=
-            data.resolvedAt.toMillis() - data.createdAt.toMillis();
-        }
-      });
-
-      const avgDays =
-        resolvedCount > 0
-          ? (totalResolutionTime / resolvedCount / (1000 * 60 * 60 * 24)).toFixed(1)
-          : "—";
-
-      setStats({
-        total,
-        resolved,
-        avgDays
-      });
-    });
-
-    return () => unsubscribe();
-  }, []);
->>>>>>> dc536509dd6bda1afb5864a21c63082f3c14e1de
+function LandingPage() {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
   return (
-<<<<<<< HEAD
-    <Box sx={{ bgcolor: '#f8f9fa', minHeight: '100vh' }}>
+    <Box sx={{ bgcolor: '#fafafa', minHeight: '100vh', overflowX: 'hidden' }}>
       
       {/* 1. HERO SECTION */}
       <HeroSection>
-        {/* Background Decorative Circle */}
+        {/* Animated Background Blobs */}
         <Box sx={{
-          position: 'absolute', top: -100, right: -100, width: 400, height: 400,
-          borderRadius: '50%', bgcolor: 'rgba(255,255,255,0.1)', zIndex: 0
+          position: 'absolute', top: '10%', left: '5%', width: 100, height: 100,
+          background: 'rgba(255,255,255,0.1)', borderRadius: '50%', animation: `${float} 6s ease-in-out infinite`
+        }} />
+        <Box sx={{
+          position: 'absolute', bottom: '20%', right: '10%', width: 150, height: 150,
+          background: 'rgba(255,255,255,0.05)', borderRadius: '50%', animation: `${float} 8s ease-in-out infinite reverse`
         }} />
 
         <Container maxWidth="md" sx={{ position: 'relative', zIndex: 1, textAlign: 'center' }}>
-          <Box sx={{ mb: 2, display: 'inline-flex', alignItems: 'center', bgcolor: 'rgba(255,255,255,0.15)', px: 2, py: 0.5, borderRadius: 5 }}>
+          
+          {/* AI Badge */}
+          <Box sx={{ 
+            mb: 3, display: 'inline-flex', alignItems: 'center', 
+            bgcolor: 'rgba(255,255,255,0.1)', backdropFilter: 'blur(5px)',
+            px: 2, py: 0.8, borderRadius: 50, border: '1px solid rgba(255,255,255,0.2)'
+          }}>
             <BoltIcon fontSize="small" sx={{ mr: 1, color: '#FFD700' }} />
-            <Typography variant="body2" fontWeight="bold">Powered by Google Gemini AI</Typography>
+            <Typography variant="subtitle2" fontWeight="bold" letterSpacing={1}>POWERED BY GEMINI AI</Typography>
           </Box>
 
-          <Typography variant="h2" component="h1" fontWeight="800" gutterBottom sx={{ lineHeight: 1.2 }}>
-            Fixing Our City, <br /> One Click at a Time.
+          {/* Main Headline */}
+          <Typography variant="h2" component="h1" fontWeight="900" sx={{ mb: 2, lineHeight: 1.1, fontSize: { xs: '2.5rem', md: '4rem' } }}>
+            Fixing Our City, <br />
+            <span style={{ color: '#4fc3f7' }}>Together.</span>
           </Typography>
           
-          <Typography variant="h6" sx={{ mb: 5, opacity: 0.9, maxWidth: '600px', mx: 'auto', lineHeight: 1.6 }}>
-            UrbanFix turns your phone into a civic tool. Snap a photo of a pothole or garbage, 
-            and let our AI route it instantly to the right authority.
+          <Typography variant="h6" sx={{ mb: 6, opacity: 0.85, maxWidth: '650px', mx: 'auto', lineHeight: 1.6, fontWeight: 300 }}>
+            UrbanFix transforms civic reporting. Snap a photo of any issue, and our AI instantly 
+            identifies, prioritizes, and routes it to the authorities.
           </Typography>
 
+          {/* Action Buttons */}
           <Box sx={{ display: 'flex', justifyContent: 'center', gap: 2, flexWrap: 'wrap' }}>
             <Button 
               component={Link} to="/report" 
               variant="contained" size="large" 
-              color="secondary"
               startIcon={<CameraAltIcon />}
-              sx={{ px: 4, py: 1.5, fontSize: '1.1rem', borderRadius: 50, boxShadow: '0 8px 20px rgba(0,0,0,0.2)' }}
+              sx={{ 
+                px: 5, py: 1.8, fontSize: '1.1rem', borderRadius: 50, 
+                bgcolor: '#00e5ff', color: '#000', fontWeight: 'bold',
+                boxShadow: '0 0 20px rgba(0, 229, 255, 0.4)',
+                '&:hover': { bgcolor: '#00b8d4', transform: 'scale(1.05)' },
+                transition: 'all 0.2s'
+              }}
             >
-              Report Issue Now
+              Report an Issue
             </Button>
             <Button 
               component={Link} to="/login" 
               variant="outlined" size="large"
-              sx={{ px: 4, py: 1.5, fontSize: '1.1rem', borderRadius: 50, borderColor: 'rgba(255,255,255,0.5)', color: 'white', '&:hover': { borderColor: 'white', bgcolor: 'rgba(255,255,255,0.1)' } }}
-=======
-    <Box sx={{ bgcolor: "#f8f9fa", minHeight: "100vh" }}>
-
-      {/* ================= HERO ================= */}
-      <HeroSection>
-        <Box
-          sx={{
-            position: "absolute",
-            top: -120,
-            right: -120,
-            width: 420,
-            height: 420,
-            borderRadius: "50%",
-            bgcolor: "rgba(255,255,255,0.1)"
-          }}
-        />
-
-        <Container maxWidth="md" sx={{ position: "relative", textAlign: "center" }}>
-          <Box sx={{
-            mb: 2,
-            display: "inline-flex",
-            alignItems: "center",
-            bgcolor: "rgba(255,255,255,0.15)",
-            px: 2,
-            py: 0.5,
-            borderRadius: 5
-          }}>
-            <BoltIcon sx={{ mr: 1, color: "#FFD700" }} />
-            <Typography variant="body2" fontWeight="bold">
-              Powered by Google Gemini AI
-            </Typography>
-          </Box>
-
-          <Typography variant="h2" fontWeight={800} gutterBottom>
-            Fixing Our City,<br />One Issue at a Time.
-          </Typography>
-
-          <Typography variant="h6" sx={{ mb: 5, opacity: 0.9 }}>
-            Report civic issues in seconds. Our AI ensures faster,
-            transparent resolution by the right authority.
-          </Typography>
-
-          <Box sx={{ display: "flex", justifyContent: "center", gap: 2, flexWrap: "wrap" }}>
-            <Button
-              component={Link}
-              to="/report"
-              variant="contained"
-              color="secondary"
-              size="large"
-              startIcon={<CameraAltIcon />}
-              sx={{ px: 4, py: 1.5, borderRadius: 50 }}
-            >
-              Report Issue
-            </Button>
-
-            <Button
-              component={Link}
-              to="/login"
-              variant="outlined"
-              size="large"
-              sx={{
-                px: 4,
-                py: 1.5,
-                borderRadius: 50,
-                color: "white",
-                borderColor: "rgba(255,255,255,0.6)"
+              sx={{ 
+                px: 5, py: 1.8, fontSize: '1.1rem', borderRadius: 50, 
+                borderColor: 'rgba(255,255,255,0.3)', color: 'white', 
+                '&:hover': { borderColor: 'white', bgcolor: 'rgba(255,255,255,0.1)' } 
               }}
->>>>>>> dc536509dd6bda1afb5864a21c63082f3c14e1de
             >
-              Authority Login
+              Official Login
             </Button>
           </Box>
         </Container>
       </HeroSection>
-<<<<<<< HEAD
 
-      {/* 2. LIVE IMPACT STATS (Floating Bar) */}
-      <Container maxWidth="lg" sx={{ mt: -8, position: 'relative', zIndex: 2 }}>
-        <Paper elevation={4} sx={{ borderRadius: 4, p: 3 }}>
-          <Grid container divide>
+      {/* 2. GLASS STATS BAR */}
+      <Container maxWidth="lg" sx={{ mt: -10, position: 'relative', zIndex: 10 }}>
+        <GlassCard>
+          <Grid container spacing={4} alignItems="center" justifyContent="center">
             <Grid item xs={12} sm={4}>
               <StatBox>
                 <Typography variant="h3">1,247</Typography>
-                <Typography>Issues Reported</Typography>
+                <Typography>Active Reports</Typography>
               </StatBox>
             </Grid>
             <Grid item xs={12} sm={4}>
-              <StatBox sx={{ borderLeft: { sm: '1px solid #eee' }, borderRight: { sm: '1px solid #eee' } }}>
-                <Typography variant="h3">892</Typography>
-                <Typography>Fixed This Month</Typography>
+              <StatBox sx={{ borderLeft: { sm: '2px solid rgba(0,0,0,0.05)' }, borderRight: { sm: '2px solid rgba(0,0,0,0.05)' } }}>
+                <Typography variant="h3">98%</Typography>
+                <Typography>AI Accuracy</Typography>
               </StatBox>
             </Grid>
             <Grid item xs={12} sm={4}>
               <StatBox>
                 <Typography variant="h3">3.2 Days</Typography>
-                <Typography>Avg. Resolution Time</Typography>
+                <Typography>Avg. Resolution</Typography>
               </StatBox>
             </Grid>
           </Grid>
-        </Paper>
+        </GlassCard>
       </Container>
 
-      {/* 3. HOW IT WORKS */}
-      <Container sx={{ py: 10 }}>
-        <Box textAlign="center" mb={6}>
-          <Typography variant="overline" color="primary" fontWeight="bold">The Process</Typography>
-          <Typography variant="h3" fontWeight="bold" gutterBottom color="#222">How UrbanFix Works</Typography>
+      {/* 3. PROCESS SECTION */}
+      <Container sx={{ py: 12 }}>
+        <Box textAlign="center" mb={8}>
+          <Typography variant="overline" color="primary" fontWeight="bold" letterSpacing={2}>WORKFLOW</Typography>
+          <GradientText variant="h3" gutterBottom>From Chaos to Clarity</GradientText>
           <Typography variant="body1" color="text.secondary" maxWidth="600px" mx="auto">
-            From chaos to clarity in three simple steps. We bridge the gap between citizens and the government.
+            We've simplified civic governance into three automated steps using Google's latest AI technology.
           </Typography>
         </Box>
 
-        <Grid container spacing={4} alignItems="center">
+        <Grid container spacing={6} alignItems="flex-start" sx={{ position: 'relative' }}>
+          
+          {/* Connector Line (Desktop Only) */}
+          {!isMobile && (
+            <Box sx={{ position: 'absolute', top: 55, left: '15%', right: '15%', height: 2, borderTop: '3px dashed #e0e0e0', zIndex: 0 }} />
+          )}
+
           {/* Step 1 */}
-          <Grid item xs={12} md={4}>
-            <FeatureCard elevation={0} sx={{ border: '1px solid #eee' }}>
-              <Avatar sx={{ width: 80, height: 80, bgcolor: '#e3f2fd', color: '#1976d2', mx: 'auto', mb: 2 }}>
+          <Grid item xs={12} md={4} sx={{ position: 'relative', zIndex: 1 }}>
+            <FeatureCard elevation={0}>
+              <Avatar sx={{ 
+                width: 90, height: 90, bgcolor: '#e3f2fd', color: '#1565c0', mx: 'auto', mb: 3,
+                boxShadow: '0 10px 20px rgba(33, 150, 243, 0.2)' 
+              }}>
                 <CameraAltIcon fontSize="large" />
               </Avatar>
-              <Typography variant="h5" fontWeight="bold" gutterBottom>1. Snap & Upload</Typography>
-              <Typography color="text.secondary">
-                See a problem? Take a photo. We auto-tag your GPS location so authorities know exactly where to go.
+              <Typography variant="h5" fontWeight="bold" gutterBottom>1. Snap</Typography>
+              <Typography color="text.secondary" lineHeight={1.6}>
+                Citizens take a photo. We automatically extract GPS coordinates and timestamp the evidence.
               </Typography>
             </FeatureCard>
           </Grid>
 
           {/* Step 2 */}
-          <Grid item xs={12} md={4}>
-            <FeatureCard elevation={0} sx={{ border: '1px solid #eee', bgcolor: '#e8f5e9' }}>
-              <Avatar sx={{ width: 80, height: 80, bgcolor: '#c8e6c9', color: '#2e7d32', mx: 'auto', mb: 2 }}>
+          <Grid item xs={12} md={4} sx={{ position: 'relative', zIndex: 1 }}>
+            <FeatureCard elevation={0}>
+              <Avatar sx={{ 
+                width: 90, height: 90, bgcolor: '#e8f5e9', color: '#2e7d32', mx: 'auto', mb: 3,
+                animation: `${pulse} 2s infinite`
+              }}>
                 <AutoGraphIcon fontSize="large" />
               </Avatar>
-              <Typography variant="h5" fontWeight="bold" gutterBottom>2. AI Analysis</Typography>
-              <Typography color="text.secondary">
-                Our Gemini AI instantly classifies the issue (e.g., "Pothole") and assigns a priority score (High/Low).
+              <Typography variant="h5" fontWeight="bold" gutterBottom>2. Analyze</Typography>
+              <Typography color="text.secondary" lineHeight={1.6}>
+                Gemini AI scans the image, classifies the issue (e.g. Garbage), and assigns an urgency score.
               </Typography>
             </FeatureCard>
           </Grid>
 
           {/* Step 3 */}
-          <Grid item xs={12} md={4}>
-            <FeatureCard elevation={0} sx={{ border: '1px solid #eee' }}>
-              <Avatar sx={{ width: 80, height: 80, bgcolor: '#fff3e0', color: '#f57c00', mx: 'auto', mb: 2 }}>
+          <Grid item xs={12} md={4} sx={{ position: 'relative', zIndex: 1 }}>
+            <FeatureCard elevation={0}>
+              <Avatar sx={{ 
+                width: 90, height: 90, bgcolor: '#fff3e0', color: '#ef6c00', mx: 'auto', mb: 3,
+                boxShadow: '0 10px 20px rgba(255, 152, 0, 0.2)'
+              }}>
                 <CheckCircleIcon fontSize="large" />
               </Avatar>
-              <Typography variant="h5" fontWeight="bold" gutterBottom>3. Resolved</Typography>
-              <Typography color="text.secondary">
-                Authorities get a dashboard alert. Once fixed, they upload proof, and you get notified instantly.
+              <Typography variant="h5" fontWeight="bold" gutterBottom>3. Resolve</Typography>
+              <Typography color="text.secondary" lineHeight={1.6}>
+                Authorities are notified instantly. Once resolved, they upload proof to close the ticket.
               </Typography>
             </FeatureCard>
           </Grid>
         </Grid>
       </Container>
 
-      {/* 4. FOOTER CALL TO ACTION */}
-      <Box sx={{ bgcolor: '#1a237e', color: 'white', py: 8, textAlign: 'center' }}>
+      {/* 4. CALL TO ACTION FOOTER */}
+      <Box sx={{ 
+        bgcolor: '#0d47a1', color: 'white', py: 10, textAlign: 'center', 
+        backgroundImage: 'radial-gradient(circle at 50% 50%, #1565c0 0%, #0d47a1 100%)' 
+      }}>
         <Container maxWidth="sm">
-          <SecurityIcon sx={{ fontSize: 50, color: '#90caf9', mb: 2 }} />
-          <Typography variant="h4" fontWeight="bold" gutterBottom>
-            Ready to make a difference?
+          <Box sx={{ mb: 3, display: 'flex', justifyContent: 'center' }}>
+            <SecurityIcon sx={{ fontSize: 60, color: '#4fc3f7', opacity: 0.8 }} />
+          </Box>
+          <Typography variant="h3" fontWeight="bold" gutterBottom>
+            Make Your Voice Heard
           </Typography>
-          <Typography variant="body1" sx={{ mb: 4, opacity: 0.8 }}>
-            Join thousands of citizens improving their neighborhoods today.
+          <Typography variant="h6" sx={{ mb: 5, opacity: 0.7, fontWeight: 300 }}>
+            Join the community of proactive citizens building a better city today.
           </Typography>
           <Button 
             component={Link} to="/report" 
             variant="contained" 
-            color="primary" 
             size="large"
             endIcon={<ArrowForwardIcon />}
-            sx={{ px: 5, py: 1.5, borderRadius: 50, bgcolor: 'white', color: '#1a237e', fontWeight: 'bold', '&:hover': { bgcolor: '#e3f2fd' } }}
-=======
-
-      {/* ================= LIVE STATS ================= */}
-      <Container maxWidth="lg" sx={{ mt: -8, position: "relative", zIndex: 2 }}>
-        <Paper elevation={6} sx={{ borderRadius: 4, p: 3 }}>
-          <Grid container>
-            {["Issues Reported", "Resolved", "Avg Resolution (Days)"].map((label, i) => (
-              <Grid item xs={12} sm={4} key={i}>
-                <StatBox>
-                  {!stats ? (
-                    <Skeleton variant="text" width={80} height={50} />
-                  ) : (
-                    <Typography variant="h3">
-                      {i === 0 && stats.total}
-                      {i === 1 && stats.resolved}
-                      {i === 2 && stats.avgDays}
-                    </Typography>
-                  )}
-                  <Typography>{label}</Typography>
-                </StatBox>
-              </Grid>
-            ))}
-          </Grid>
-        </Paper>
-      </Container>
-
-      {/* ================= HOW IT WORKS ================= */}
-      <Container sx={{ py: 10 }}>
-        <Box textAlign="center" mb={6}>
-          <Typography variant="overline" color="primary" fontWeight="bold">
-            The Process
-          </Typography>
-          <Typography variant="h3" fontWeight="bold">
-            How UrbanFix Works
-          </Typography>
-        </Box>
-
-        <Grid container spacing={4}>
-          {[
-            { icon: <CameraAltIcon />, title: "Snap & Upload", desc: "Capture the issue with GPS tagging." },
-            { icon: <AutoGraphIcon />, title: "AI Analysis", desc: "Gemini AI classifies and prioritizes." },
-            { icon: <CheckCircleIcon />, title: "Resolved", desc: "Authorities fix and upload proof." }
-          ].map((step, i) => (
-            <Grid item xs={12} md={4} key={i}>
-              <FeatureCard>
-                <Avatar sx={{ width: 80, height: 80, mx: "auto", mb: 2 }}>
-                  {step.icon}
-                </Avatar>
-                <Typography variant="h5" fontWeight="bold">
-                  {step.title}
-                </Typography>
-                <Typography color="text.secondary">
-                  {step.desc}
-                </Typography>
-              </FeatureCard>
-            </Grid>
-          ))}
-        </Grid>
-      </Container>
-
-      {/* ================= FOOTER CTA ================= */}
-      <Box sx={{ bgcolor: "#1a237e", color: "white", py: 8, textAlign: "center" }}>
-        <Container maxWidth="sm">
-          <SecurityIcon sx={{ fontSize: 50, mb: 2 }} />
-          <Typography variant="h4" fontWeight="bold">
-            Ready to Improve Your City?
-          </Typography>
-          <Typography sx={{ opacity: 0.8, mb: 4 }}>
-            Join citizens and authorities working together in real time.
-          </Typography>
-          <Button
-            component={Link}
-            to="/report"
-            variant="contained"
-            size="large"
-            endIcon={<ArrowForwardIcon />}
-            sx={{ px: 5, py: 1.5, borderRadius: 50 }}
->>>>>>> dc536509dd6bda1afb5864a21c63082f3c14e1de
+            sx={{ 
+              px: 6, py: 2, borderRadius: 50, bgcolor: 'white', color: '#0d47a1', 
+              fontWeight: '900', fontSize: '1.2rem',
+              '&:hover': { transform: 'translateY(-3px)', boxShadow: '0 10px 20px rgba(0,0,0,0.3)' },
+              transition: 'transform 0.2s'
+            }}
           >
-            Start Reporting
+            Start Reporting Now
           </Button>
         </Container>
       </Box>
     </Box>
   );
 }
+
+export default LandingPage;
