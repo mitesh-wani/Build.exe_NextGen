@@ -157,33 +157,61 @@ export default function ReportIssueScreen() {
   };
 
   const handleSubmit = async () => {
-    // Validation
+    console.log('🔍 Starting validation...');
+    
+    // ✅ VALIDATE BEFORE SETTING LOADING STATE
     if (!selectedCategory) {
+      console.log('❌ Validation failed: No category');
       Alert.alert('Required', 'Please select a category');
       return;
     }
-    if (!description.trim()) {
+    
+    const trimmedDescription = description.trim();
+    if (!trimmedDescription) {
+      console.log('❌ Validation failed: Empty description');
       Alert.alert('Required', 'Please provide a description');
       return;
     }
+    
+    if (trimmedDescription.length < 10) {
+      console.log('❌ Validation failed: Description too short');
+      Alert.alert('Description Too Short', 'Please provide at least 10 characters describing the issue');
+      return;
+    }
+    
     if (!image) {
+      console.log('❌ Validation failed: No image');
       Alert.alert('Required', 'Please attach a photo');
       return;
     }
+    
     if (!location) {
+      console.log('❌ Validation failed: No location');
       Alert.alert('Location Needed', 'We need your location to proceed');
       return;
     }
 
     const userId = auth.currentUser?.uid;
     if (!userId) {
+      console.log('❌ Validation failed: Not authenticated');
       Alert.alert('Authentication Required', 'Please log in to report an issue');
       return;
     }
 
+    console.log('✅ All validations passed');
+    console.log('📊 Form data:', {
+      category: selectedCategory,
+      descriptionLength: trimmedDescription.length,
+      hasImage: !!image,
+      hasLocation: !!location,
+      userId: userId
+    });
+
+    // ✅ SET LOADING ONLY AFTER ALL VALIDATIONS PASS
     setLoading(true);
 
     try {
+      console.log('📤 Starting issue submission...');
       const categoryObj = ISSUE_CATEGORIES.find(c => c.name === selectedCategory) || ISSUE_CATEGORIES[7];
 
       // ✅ Prepare issue data matching service structure
@@ -192,7 +220,7 @@ export default function ReportIssueScreen() {
         userName: userProfile?.displayName || 'Anonymous User',
         userPhone: userProfile?.phone || '',
         title: title.trim() || categoryObj.name,
-        description: description.trim(),
+        description: trimmedDescription,
         category: selectedCategory,
         priority: selectedPriority,
         location: {
@@ -205,13 +233,33 @@ export default function ReportIssueScreen() {
         aiAnalysis: null, // Optional: can add AI analysis later
       };
 
-      console.log('📤 Submitting issue:', issueData.title);
+      console.log('📤 Issue data prepared:', {
+        title: issueData.title,
+        category: issueData.category,
+        descriptionLength: issueData.description.length,
+        hasPhoto: !!issueData.photos[0]?.uri,
+        photoUri: issueData.photos[0]?.uri?.substring(0, 50) + '...', // Show first 50 chars
+        location: issueData.location
+      });
 
       // ✅ Use service function - it handles photo upload automatically
-      const result = await createIssue(issueData);
+      console.log('🚀 Calling createIssue service...');
+      
+      // Add timeout to prevent infinite loading
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Upload timeout - please check your connection')), 30000)
+      );
+      
+      const result = await Promise.race([
+        createIssue(issueData),
+        timeoutPromise
+      ]);
+      
+      console.log('📥 Service response:', result);
 
       if (result.success) {
-        console.log('✅ Issue created:', result.issueId);
+        console.log('✅ Issue created successfully! ID:', result.issueId);
+        setLoading(false); // ✅ Stop loading before showing alert
         
         Alert.alert(
           'Report Submitted! ✅',
@@ -238,13 +286,19 @@ export default function ReportIssueScreen() {
         );
       } else {
         console.error('❌ Issue creation failed:', result.error);
-        Alert.alert('Submission Failed', result.error || 'Something went wrong. Please try again.');
+        setLoading(false); // ✅ Stop loading before showing error
+        Alert.alert(
+          'Submission Failed', 
+          result.error || 'Something went wrong. Please try again.'
+        );
       }
     } catch (err) {
-      console.error('❌ Submit error:', err);
-      Alert.alert('Submission Failed', 'Something went wrong. Please try again.');
-    } finally {
-      setLoading(false);
+      console.error('❌ Unexpected error during submission:', err);
+      setLoading(false); // ✅ Stop loading on error
+      Alert.alert(
+        'Submission Failed', 
+        err.message || 'Something went wrong. Please try again.'
+      );
     }
   };
 
