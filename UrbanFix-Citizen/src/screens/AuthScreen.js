@@ -12,7 +12,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '../services/firebase';
+import { auth } from '../services/firebase'; // ✅ Updated import path
+import { createUserProfile } from '../services/firebaseServices'; // ✅ Import service
 import { COLORS, SIZES, SPACING } from '../constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 
@@ -27,8 +28,9 @@ export default function AuthScreen() {
   });
 
   const handleAuth = async () => {
-    const { email, password, name } = formData;
+    const { email, password, name, phone } = formData;
 
+    // Validation
     if (!email || !password) {
       Alert.alert('Error', 'Please fill in all required fields');
       return;
@@ -43,26 +45,66 @@ export default function AuthScreen() {
 
     try {
       if (isLogin) {
-        await signInWithEmailAndPassword(auth, email, password);
+        // ✅ LOGIN - Just authenticate
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        console.log('✅ User logged in:', userCredential.user.uid);
         Alert.alert('Success', 'Logged in successfully!');
       } else {
-        await createUserWithEmailAndPassword(auth, email, password);
-        Alert.alert('Success', 'Account created successfully!');
+        // ✅ SIGN UP - Create auth account AND Firestore profile
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const user = userCredential.user;
+        
+        console.log('✅ Auth account created:', user.uid);
+
+        // ✅ Create user profile in Firestore using service
+        const profileResult = await createUserProfile(user.uid, {
+          email: email,
+          displayName: name,
+          phone: phone,
+          role: 'citizen', // Default role
+        });
+
+        if (profileResult.success) {
+          console.log('✅ User profile created in Firestore');
+          Alert.alert('Success', 'Account created successfully!');
+        } else {
+          // Profile creation failed but auth succeeded
+          console.error('⚠️ Profile creation failed:', profileResult.error);
+          Alert.alert(
+            'Partial Success', 
+            'Account created but profile setup incomplete. Please contact support.'
+          );
+        }
       }
     } catch (error) {
-      console.error('Auth error:', error);
+      console.error('❌ Auth error:', error);
       
+      // ✅ Enhanced error handling
       let errorMessage = 'An error occurred';
-      if (error.code === 'auth/email-already-in-use') {
-        errorMessage = 'Email is already registered';
-      } else if (error.code === 'auth/invalid-email') {
-        errorMessage = 'Invalid email address';
-      } else if (error.code === 'auth/weak-password') {
-        errorMessage = 'Password should be at least 6 characters';
-      } else if (error.code === 'auth/user-not-found') {
-        errorMessage = 'User not found';
-      } else if (error.code === 'auth/wrong-password') {
-        errorMessage = 'Incorrect password';
+      switch (error.code) {
+        case 'auth/email-already-in-use':
+          errorMessage = 'Email is already registered';
+          break;
+        case 'auth/invalid-email':
+          errorMessage = 'Invalid email address';
+          break;
+        case 'auth/weak-password':
+          errorMessage = 'Password should be at least 6 characters';
+          break;
+        case 'auth/user-not-found':
+          errorMessage = 'User not found';
+          break;
+        case 'auth/wrong-password':
+          errorMessage = 'Incorrect password';
+          break;
+        case 'auth/invalid-credential':
+          errorMessage = 'Invalid email or password';
+          break;
+        case 'auth/network-request-failed':
+          errorMessage = 'Network error. Please check your connection';
+          break;
+        default:
+          errorMessage = error.message || 'An error occurred';
       }
       
       Alert.alert('Error', errorMessage);
@@ -101,16 +143,29 @@ export default function AuthScreen() {
         </View>
 
         {!isLogin && (
-          <View style={styles.inputContainer}>
-            <MaterialIcons name="person" size={20} color={COLORS.gray[400]} style={styles.inputIcon} />
-            <TextInput
-              style={styles.input}
-              placeholder="Full Name"
-              value={formData.name}
-              onChangeText={(text) => setFormData({ ...formData, name: text })}
-              autoCapitalize="words"
-            />
-          </View>
+          <>
+            <View style={styles.inputContainer}>
+              <MaterialIcons name="person" size={20} color={COLORS.gray[400]} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Full Name"
+                value={formData.name}
+                onChangeText={(text) => setFormData({ ...formData, name: text })}
+                autoCapitalize="words"
+              />
+            </View>
+
+            <View style={styles.inputContainer}>
+              <MaterialIcons name="phone" size={20} color={COLORS.gray[400]} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Phone Number (Optional)"
+                value={formData.phone}
+                onChangeText={(text) => setFormData({ ...formData, phone: text })}
+                keyboardType="phone-pad"
+              />
+            </View>
+          </>
         )}
 
         <View style={styles.inputContainer}>
@@ -137,9 +192,9 @@ export default function AuthScreen() {
         </View>
 
         <TouchableOpacity 
-          style={styles.button} 
+          style={[styles.button, loading && styles.buttonDisabled]} 
           onPress={handleAuth} 
-          disabled={loading === true}
+          disabled={loading}
         >
           {loading ? (
             <ActivityIndicator color={COLORS.white} />
@@ -238,6 +293,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: SPACING.md,
+  },
+  buttonDisabled: {
+    opacity: 0.7,
   },
   buttonText: {
     color: COLORS.white,

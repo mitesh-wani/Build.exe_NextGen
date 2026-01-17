@@ -9,63 +9,97 @@ import {
   RefreshControl,
   Image,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import { collection, query, where, getDocs, orderBy, Timestamp } from 'firebase/firestore';
-import { auth, db } from '../../firebaseConfig';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { auth } from '../services/firebase'; // ✅ Updated import
+import { 
+  getUserIssues, 
+  subscribeToUserIssues // ✅ Real-time listener
+} from '../services/firebaseServices'; // ✅ Import services
 
-// Import your theme constants
-import { COLORS, SPACING, BORDER_RADIUS, SIZES, ISSUE_STATUS, PRIORITY_LEVELS, ISSUE_CATEGORIES } from '../constants/theme';
+import { 
+  COLORS, 
+  SPACING, 
+  BORDER_RADIUS, 
+  SIZES, 
+  ISSUE_STATUS, 
+  PRIORITY_LEVELS, 
+  ISSUE_CATEGORIES 
+} from '../constants/theme';
 
 const STATUS_FILTERS = [
   { id: 'all', label: 'All', color: COLORS.gray[600] },
   { id: 'pending', label: 'Pending', ...ISSUE_STATUS.PENDING },
-  { id: 'in_progress', label: 'In Progress', ...ISSUE_STATUS.IN_PROGRESS },
+  { id: 'in-progress', label: 'In Progress', ...ISSUE_STATUS.IN_PROGRESS }, // ✅ Fixed to match service
   { id: 'resolved', label: 'Resolved', ...ISSUE_STATUS.RESOLVED },
-  // You can add 'rejected' if needed
 ];
 
 export default function MyIssuesScreen() {
-  const router = useRouter();
+  const navigation = useNavigation();
   const [issues, setIssues] = useState([]);
   const [filteredIssues, setFilteredIssues] = useState([]);
   const [selectedFilter, setSelectedFilter] = useState('all');
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [unsubscribe, setUnsubscribe] = useState(null);
 
-  useEffect(() => {
-    fetchIssues();
-  }, []);
+  // Refresh on screen focus
+  useFocusEffect(
+    React.useCallback(() => {
+      fetchIssues();
+      setupRealtimeListener();
+      
+      return () => {
+        if (unsubscribe) {
+          unsubscribe();
+        }
+      };
+    }, [])
+  );
 
   useEffect(() => {
     filterIssues();
   }, [selectedFilter, issues]);
 
+  // ✅ Set up real-time listener
+  const setupRealtimeListener = () => {
+    const userId = auth.currentUser?.uid;
+    if (!userId) return;
+
+    const unsubscribeFn = subscribeToUserIssues(userId, (updatedIssues) => {
+      console.log('✅ Real-time update: User issues', updatedIssues.length);
+      setIssues(updatedIssues);
+      setLoading(false);
+    });
+
+    setUnsubscribe(() => unsubscribeFn);
+  };
+
   const fetchIssues = async () => {
     try {
       const userId = auth.currentUser?.uid;
-      if (!userId) return;
+      if (!userId) {
+        Alert.alert('Not Logged In', 'Please log in to view your issues');
+        setLoading(false);
+        return;
+      }
 
-      const issuesQuery = query(
-        collection(db, 'issues'),
-        where('userId', '==', userId),
-        orderBy('createdAt', 'desc')
-      );
+      // ✅ Use service function instead of direct Firestore query
+      const result = await getUserIssues(userId);
 
-      const snapshot = await getDocs(issuesQuery);
-      const issuesData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        // Ensure createdAt is handled properly (Firestore Timestamp → Date)
-        createdAt: doc.data().createdAt instanceof Timestamp 
-          ? doc.data().createdAt.toDate() 
-          : new Date(doc.data().createdAt),
-      }));
-
-      setIssues(issuesData);
+      if (result.success) {
+        console.log(`✅ Fetched ${result.data.length} user issues`);
+        setIssues(result.data);
+      } else {
+        console.error('❌ Error fetching issues:', result.error);
+        Alert.alert('Error', 'Failed to load your issues. Please try again.');
+      }
     } catch (error) {
-      console.error('Error fetching issues:', error);
+      console.error('❌ Unexpected error:', error);
+      Alert.alert('Error', 'Something went wrong');
     } finally {
       setLoading(false);
     }
@@ -85,210 +119,343 @@ export default function MyIssuesScreen() {
     setRefreshing(false);
   };
 
-  // Helper to get category icon & color
   const getCategoryInfo = (categoryName) => {
     const category = ISSUE_CATEGORIES.find(c => c.name === categoryName);
     return category || { icon: 'help-circle-outline', color: COLORS.gray[500] };
   };
 
+  const formatDate = (date) => {
+    if (!date) return '—';
+    
+    // ✅ Handle both Date objects and timestamps
+    const dateObj = date instanceof Date ? date : new Date(date);
+    
+    const now = new Date();
+    const diff = now - dateObj;
+    const days = Math.floor(diff / 86400000);
+    
+    if (days === 0) return 'Today';
+    if (days === 1) return 'Yesterday';
+    if (days < 7) return `${days}d ago`;
+    
+    return dateObj.toLocaleDateString('en-US', {
+      day: 'numeric',
+      month: 'short',
+      year: dateObj.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+    });
+  };
+
   const renderIssueCard = ({ item }) => {
-    const statusInfo = ISSUE_STATUS[item.status?.toUpperCase()] || ISSUE_STATUS.PENDING;
+    const statusInfo = ISSUE_STATUS[item.status?.toUpperCase().replace('-', '_')] || ISSUE_STATUS.PENDING;
     const priorityInfo = PRIORITY_LEVELS[item.priority?.toUpperCase()] || PRIORITY_LEVELS.MEDIUM;
     const categoryInfo = getCategoryInfo(item.category);
+
+    // ✅ Use photos array from service
+    const imageUrl = item.photos && item.photos.length > 0 ? item.photos[0] : null;
 
     return (
       <TouchableOpacity
         style={styles.issueCard}
-        activeOpacity={0.8}
-        onPress={() => router.push(`/issue/${item.id}`)}
+        activeOpacity={0.7}
+        onPress={() => navigation.navigate('IssueDetail', { issueId: item.id })}
       >
+        {/* Image or Category Icon */}
+        {imageUrl ? (
+          <Image source={{ uri: imageUrl }} style={styles.issueImage} />
+        ) : (
+          <View style={[styles.categoryIconContainer, { backgroundColor: categoryInfo.color + '15' }]}>
+            <View style={[styles.categoryIconCircle, { backgroundColor: categoryInfo.color + '25' }]}>
+              <Ionicons name={categoryInfo.icon} size={32} color={categoryInfo.color} />
+            </View>
+          </View>
+        )}
+
+        {/* Content */}
         <View style={styles.cardContent}>
-          {/* Left side - Image or Category Icon */}
-          <View style={styles.leftColumn}>
-            {item.imageUrl ? (
-              <Image source={{ uri: item.imageUrl }} style={styles.issueImage} />
-            ) : (
-              <View style={[styles.categoryIconContainer, { backgroundColor: categoryInfo.color + '22' }]}>
-                <Ionicons name={categoryInfo.icon} size={36} color={categoryInfo.color} />
-              </View>
-            )}
+          <View style={styles.cardHeader}>
+            <View style={styles.categoryBadge}>
+              <Ionicons name="pricetag" size={12} color={COLORS.primary} />
+              <Text style={styles.categoryText}>{item.category || 'General'}</Text>
+            </View>
+            <View style={[styles.statusBadge, { backgroundColor: statusInfo.bgColor }]}>
+              <View style={[styles.statusDot, { backgroundColor: statusInfo.color }]} />
+              <Text style={[styles.statusText, { color: statusInfo.color }]}>
+                {statusInfo.label}
+              </Text>
+            </View>
           </View>
 
-          {/* Main content */}
-          <View style={styles.mainContent}>
-            <View style={styles.headerRow}>
-              <Text style={styles.title} numberOfLines={1}>
-                {item.title || item.category || 'Untitled Issue'}
-              </Text>
+          <Text style={styles.title} numberOfLines={2}>
+            {item.title || item.category || 'Untitled Issue'}
+          </Text>
 
-              <View style={[styles.priorityBadge, { backgroundColor: priorityInfo.color }]}>
-                <Text style={styles.priorityText}>{priorityInfo.label}</Text>
-              </View>
-            </View>
-
+          {item.description && (
             <Text style={styles.description} numberOfLines={2}>
-              {item.description || 'No description provided'}
+              {item.description}
             </Text>
+          )}
 
+          <View style={styles.cardFooter}>
             <View style={styles.locationRow}>
-              <Ionicons name="location-outline" size={SIZES.sm} color={COLORS.gray[500]} />
+              <Ionicons name="location" size={14} color={COLORS.primary} />
               <Text style={styles.location} numberOfLines={1}>
-                {item.address || 'Location not specified'}
+                {/* ✅ Use location.address from service structure */}
+                {item.location?.address || 'Location'}
               </Text>
             </View>
 
-            <View style={styles.footerRow}>
-              <View style={[styles.statusBadge, { backgroundColor: statusInfo.bgColor }]}>
-                <Text style={[styles.statusText, { color: statusInfo.color }]}>
-                  {statusInfo.label}
-                </Text>
-              </View>
-
-              <Text style={styles.date}>
-                {item.createdAt ? item.createdAt.toLocaleDateString('en-IN', {
-                  day: 'numeric',
-                  month: 'short',
-                  year: 'numeric'
-                }) : '—'}
-              </Text>
+            <View style={styles.metaRow}>
+              <View style={[styles.priorityDot, { backgroundColor: priorityInfo.color }]} />
+              <Text style={styles.dateText}>{formatDate(item.createdAt)}</Text>
             </View>
           </View>
-
-          <Ionicons name="chevron-forward" size={24} color={COLORS.gray[400]} />
         </View>
       </TouchableOpacity>
     );
   };
 
-  return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={28} color={COLORS.dark} />
-        </TouchableOpacity>
-
-        <View style={styles.headerText}>
-          <Text style={styles.titleLarge}>My Issues</Text>
-          <Text style={styles.subtitle}>
-            {filteredIssues.length} {filteredIssues.length === 1 ? 'issue' : 'issues'}
-          </Text>
+  const renderStats = () => (
+    <View style={styles.statsContainer}>
+      <View style={styles.statCard}>
+        <View style={[styles.statIcon, { backgroundColor: COLORS.warning + '15' }]}>
+          <Ionicons name="hourglass" size={20} color={COLORS.warning} />
         </View>
+        <Text style={styles.statNumber}>
+          {issues.filter(i => i.status === 'pending').length}
+        </Text>
+        <Text style={styles.statLabel}>Pending</Text>
       </View>
 
-      {/* Filters */}
-      <View style={styles.filters}>
-        {STATUS_FILTERS.map(filter => {
-          const isActive = selectedFilter === filter.id;
-          return (
-            <TouchableOpacity
-              key={filter.id}
-              style={[
-                styles.filterChip,
-                isActive && { backgroundColor: filter.color || filter.bgColor || COLORS.primary },
-              ]}
-              onPress={() => setSelectedFilter(filter.id)}
-            >
-              <Text
-                style={[
-                  styles.filterLabel,
-                  isActive && { color: COLORS.white },
-                ]}
-              >
-                {filter.label}
-              </Text>
+      <View style={styles.statCard}>
+        <View style={[styles.statIcon, { backgroundColor: COLORS.info + '15' }]}>
+          <Ionicons name="construct" size={20} color={COLORS.info} />
+        </View>
+        <Text style={styles.statNumber}>
+          {/* ✅ Fixed status name */}
+          {issues.filter(i => i.status === 'in-progress' || i.status === 'assigned').length}
+        </Text>
+        <Text style={styles.statLabel}>In Progress</Text>
+      </View>
 
-              {filter.id !== 'all' && (
-                <View style={[styles.filterBadge, isActive && { backgroundColor: 'rgba(255,255,255,0.35)' }]}>
+      <View style={styles.statCard}>
+        <View style={[styles.statIcon, { backgroundColor: COLORS.success + '15' }]}>
+          <Ionicons name="checkmark-circle" size={20} color={COLORS.success} />
+        </View>
+        <Text style={styles.statNumber}>
+          {issues.filter(i => i.status === 'resolved').length}
+        </Text>
+        <Text style={styles.statLabel}>Resolved</Text>
+      </View>
+    </View>
+  );
+
+  return (
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <View style={styles.container}>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity 
+            style={styles.backBtn} 
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="arrow-back" size={24} color={COLORS.white} />
+          </TouchableOpacity>
+
+          <View style={styles.headerText}>
+            <Text style={styles.titleLarge}>My Reports</Text>
+            <Text style={styles.subtitle}>
+              {issues.length} {issues.length === 1 ? 'issue' : 'issues'} reported
+            </Text>
+          </View>
+
+          <TouchableOpacity 
+            style={styles.addBtn}
+            onPress={() => navigation.navigate('ReportIssue')}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="add" size={24} color={COLORS.white} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Stats */}
+        {!loading && issues.length > 0 && renderStats()}
+
+        {/* Filters */}
+        <View style={styles.filters}>
+          {STATUS_FILTERS.map(filter => {
+            const isActive = selectedFilter === filter.id;
+            const count = filter.id === 'all' 
+              ? issues.length 
+              : issues.filter(i => i.status === filter.id).length;
+
+            return (
+              <TouchableOpacity
+                key={filter.id}
+                style={[
+                  styles.filterChip,
+                  isActive && { 
+                    backgroundColor: filter.color || filter.bgColor || COLORS.primary,
+                    borderColor: filter.color || filter.bgColor || COLORS.primary,
+                  },
+                ]}
+                onPress={() => setSelectedFilter(filter.id)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.filterLabel, isActive && { color: COLORS.white }]}>
+                  {filter.label}
+                </Text>
+                <View style={[
+                  styles.filterBadge, 
+                  isActive && { backgroundColor: 'rgba(255,255,255,0.3)' }
+                ]}>
                   <Text style={[styles.filterBadgeText, isActive && { color: COLORS.white }]}>
-                    {issues.filter(i => i.status === filter.id).length}
+                    {count}
                   </Text>
                 </View>
-              )}
-            </TouchableOpacity>
-          );
-        })}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* Content */}
+        {loading ? (
+          <View style={styles.center}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={styles.loadingText}>Loading your reports...</Text>
+          </View>
+        ) : filteredIssues.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <View style={styles.emptyIconCircle}>
+              <Ionicons 
+                name={selectedFilter === 'all' ? 'document-text-outline' : 'funnel-outline'} 
+                size={48} 
+                color={COLORS.primary} 
+              />
+            </View>
+            <Text style={styles.emptyTitle}>
+              {selectedFilter === 'all' ? 'No Reports Yet' : `No ${selectedFilter.replace('-', ' ')} issues`}
+            </Text>
+            <Text style={styles.emptySubtitle}>
+              {selectedFilter === 'all'
+                ? 'Start reporting civic issues in your community'
+                : 'Try selecting a different filter'}
+            </Text>
+
+            {selectedFilter === 'all' && (
+              <TouchableOpacity
+                style={styles.reportBtn}
+                onPress={() => navigation.navigate('ReportIssue')}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="add-circle" size={22} color={COLORS.white} />
+                <Text style={styles.reportBtnText}>Report an Issue</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        ) : (
+          <FlatList
+            data={filteredIssues}
+            renderItem={renderIssueCard}
+            keyExtractor={item => item.id}
+            contentContainerStyle={styles.list}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={[COLORS.primary]}
+                tintColor={COLORS.primary}
+              />
+            }
+          />
+        )}
       </View>
-
-      {/* Content */}
-      {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-        </View>
-      ) : filteredIssues.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Ionicons name="clipboard-outline" size={80} color={COLORS.gray[300]} />
-          <Text style={styles.emptyTitle}>
-            {selectedFilter === 'all' ? 'No issues yet' : `No ${selectedFilter.replace('_', ' ')} issues`}
-          </Text>
-          <Text style={styles.emptySubtitle}>
-            {selectedFilter === 'all'
-              ? 'Report your first civic issue'
-              : 'Try another filter'}
-          </Text>
-
-          {selectedFilter === 'all' && (
-            <TouchableOpacity
-              style={styles.reportBtn}
-              onPress={() => router.push('/report')}
-            >
-              <Ionicons name="add" size={20} color={COLORS.white} />
-              <Text style={styles.reportBtnText}>Report Issue</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      ) : (
-        <FlatList
-          data={filteredIssues}
-          renderItem={renderIssueCard}
-          keyExtractor={item => item.id}
-          contentContainerStyle={styles.list}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              colors={[COLORS.primary]}
-              tintColor={COLORS.primary}
-            />
-          }
-        />
-      )}
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: COLORS.primary,
+  },
   container: {
     flex: 1,
-    backgroundColor: COLORS.gray[100],
+    backgroundColor: COLORS.gray[50],
   },
 
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.white,
-    paddingTop: 50,
+    backgroundColor: COLORS.primary,
     paddingHorizontal: SPACING.lg,
-    paddingBottom: SPACING.md,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.gray[200],
+    paddingVertical: SPACING.lg,
+    gap: SPACING.md,
   },
   backBtn: {
-    padding: SPACING.xs,
-    marginRight: SPACING.md,
+    width: 40,
+    height: 40,
+    borderRadius: BORDER_RADIUS.full,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: BORDER_RADIUS.full,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   headerText: {
     flex: 1,
   },
   titleLarge: {
-    fontSize: 26,
-    fontWeight: '700',
-    color: COLORS.dark,
+    fontSize: 24,
+    fontWeight: '800',
+    color: COLORS.white,
+    letterSpacing: 0.3,
   },
   subtitle: {
-    fontSize: SIZES.md,
-    color: COLORS.gray[600],
+    fontSize: SIZES.sm,
+    color: COLORS.white,
+    opacity: 0.9,
     marginTop: 2,
+  },
+
+  statsContainer: {
+    flexDirection: 'row',
+    padding: SPACING.md,
+    gap: SPACING.sm,
+    backgroundColor: COLORS.white,
+  },
+  statCard: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: COLORS.gray[50],
+    padding: SPACING.md,
+    borderRadius: BORDER_RADIUS.lg,
+  },
+  statIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: BORDER_RADIUS.full,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: SPACING.xs,
+  },
+  statNumber: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: COLORS.dark,
+    marginBottom: 2,
+  },
+  statLabel: {
+    fontSize: SIZES.xs,
+    color: COLORS.gray[600],
+    fontWeight: '600',
   },
 
   filters: {
@@ -298,27 +465,29 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.white,
     gap: SPACING.sm,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.gray[200],
+    borderBottomColor: COLORS.gray[100],
   },
   filterChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: SPACING.lg,
+    paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     borderRadius: BORDER_RADIUS.full,
-    backgroundColor: COLORS.gray[200],
+    backgroundColor: COLORS.white,
+    borderWidth: 1.5,
+    borderColor: COLORS.gray[300],
     gap: SPACING.xs,
   },
   filterLabel: {
-    fontSize: SIZES.md,
-    fontWeight: '600',
+    fontSize: SIZES.sm,
+    fontWeight: '700',
     color: COLORS.gray[700],
   },
   filterBadge: {
-    backgroundColor: COLORS.white,
+    backgroundColor: COLORS.gray[200],
     borderRadius: BORDER_RADIUS.full,
-    minWidth: 22,
-    height: 22,
+    minWidth: 20,
+    height: 20,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 6,
@@ -331,101 +500,128 @@ const styles = StyleSheet.create({
 
   list: {
     padding: SPACING.md,
+    paddingBottom: SPACING.xxl,
   },
 
   issueCard: {
     backgroundColor: COLORS.white,
-    borderRadius: BORDER_RADIUS.lg,
+    borderRadius: BORDER_RADIUS.xl,
     marginBottom: SPACING.md,
     overflow: 'hidden',
-    elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
-    shadowRadius: 8,
-  },
-  cardContent: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-  },
-  leftColumn: {
-    width: 100,
-    backgroundColor: COLORS.gray[50],
+    shadowRadius: 12,
+    elevation: 3,
   },
   issueImage: {
     width: '100%',
-    height: '100%',
-    minHeight: 140,
+    height: 160,
+    backgroundColor: COLORS.gray[200],
   },
   categoryIconContainer: {
-    flex: 1,
+    width: '100%',
+    height: 160,
     justifyContent: 'center',
     alignItems: 'center',
-    minHeight: 140,
   },
-  mainContent: {
-    flex: 1,
+  categoryIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: BORDER_RADIUS.full,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cardContent: {
     padding: SPACING.md,
   },
-  headerRow: {
+  cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     marginBottom: SPACING.sm,
   },
-  title: {
-    fontSize: SIZES.xl,
-    fontWeight: '700',
-    color: COLORS.dark,
-    flex: 1,
-    marginRight: SPACING.sm,
-  },
-  priorityBadge: {
+  categoryBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.primary + '15',
     paddingHorizontal: SPACING.sm,
     paddingVertical: 4,
-    borderRadius: BORDER_RADIUS.md,
-    alignSelf: 'flex-start',
+    borderRadius: BORDER_RADIUS.sm,
+    gap: 4,
   },
-  priorityText: {
-    color: COLORS.white,
-    fontSize: SIZES.sm - 2,
+  categoryText: {
+    fontSize: SIZES.xs,
     fontWeight: '700',
+    color: COLORS.primary,
     textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 4,
+    borderRadius: BORDER_RADIUS.sm,
+    gap: 4,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: BORDER_RADIUS.full,
+  },
+  statusText: {
+    fontSize: SIZES.xs,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  title: {
+    fontSize: SIZES.lg,
+    fontWeight: '700',
+    color: COLORS.dark,
+    marginBottom: SPACING.xs,
+    lineHeight: 22,
   },
   description: {
-    fontSize: SIZES.md,
+    fontSize: SIZES.sm,
     color: COLORS.gray[600],
     lineHeight: 20,
-    marginBottom: SPACING.md,
+    marginBottom: SPACING.sm,
+  },
+  cardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: SPACING.sm,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.gray[100],
   },
   locationRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: SPACING.sm,
+    flex: 1,
+    gap: 4,
+    marginRight: SPACING.sm,
   },
   location: {
-    fontSize: SIZES.sm,
+    fontSize: SIZES.xs,
     color: COLORS.gray[600],
-    marginLeft: SPACING.xs,
-    flex: 1,
+    fontWeight: '500',
   },
-  footerRow: {
+  metaRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 6,
   },
-  statusBadge: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs,
+  priorityDot: {
+    width: 8,
+    height: 8,
     borderRadius: BORDER_RADIUS.full,
   },
-  statusText: {
-    fontSize: SIZES.sm - 1,
-    fontWeight: '600',
-  },
-  date: {
-    fontSize: SIZES.sm,
+  dateText: {
+    fontSize: SIZES.xs,
     color: COLORS.gray[500],
+    fontWeight: '500',
   },
 
   center: {
@@ -433,23 +629,37 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  loadingText: {
+    marginTop: SPACING.md,
+    color: COLORS.gray[500],
+    fontSize: SIZES.md,
+  },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: SPACING.xxl,
   },
+  emptyIconCircle: {
+    width: 100,
+    height: 100,
+    borderRadius: BORDER_RADIUS.full,
+    backgroundColor: COLORS.primary + '15',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: SPACING.lg,
+  },
   emptyTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: COLORS.gray[600],
-    marginTop: SPACING.lg,
+    fontSize: 22,
+    fontWeight: '700',
+    color: COLORS.dark,
+    marginBottom: SPACING.sm,
   },
   emptySubtitle: {
     fontSize: SIZES.md,
     color: COLORS.gray[500],
     textAlign: 'center',
-    marginTop: SPACING.sm,
+    lineHeight: 22,
     marginBottom: SPACING.xl,
   },
   reportBtn: {
@@ -457,13 +667,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: COLORS.primary,
     paddingHorizontal: SPACING.xl,
-    paddingVertical: SPACING.lg,
+    paddingVertical: SPACING.md,
     borderRadius: BORDER_RADIUS.full,
     gap: SPACING.sm,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   reportBtnText: {
     color: COLORS.white,
-    fontSize: SIZES.lg,
-    fontWeight: '600',
+    fontSize: SIZES.md,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
 });
