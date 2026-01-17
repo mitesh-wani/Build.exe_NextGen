@@ -12,8 +12,8 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '../services/firebase'; // ✅ Updated import path
-import { createUserProfile } from '../services/firebaseServices'; // ✅ Import service
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { auth, db } from '../services/firebase';
 import { COLORS, SIZES, SPACING } from '../constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 
@@ -45,31 +45,31 @@ export default function AuthScreen() {
 
     try {
       if (isLogin) {
-        // ✅ LOGIN - Just authenticate
+        // LOGIN
         const userCredential = await signInWithEmailAndPassword(auth, email, password);
         console.log('✅ User logged in:', userCredential.user.uid);
-        Alert.alert('Success', 'Logged in successfully!');
       } else {
-        // ✅ SIGN UP - Create auth account AND Firestore profile
+        // SIGN UP - Create auth account AND Firestore profile
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
         const user = userCredential.user;
         
         console.log('✅ Auth account created:', user.uid);
 
-        // ✅ Create user profile in Firestore using service
-        const profileResult = await createUserProfile(user.uid, {
-          email: email,
-          displayName: name,
-          phone: phone,
-          role: 'citizen', // Default role
-        });
-
-        if (profileResult.success) {
+        // Create user profile in Firestore
+        try {
+          await setDoc(doc(db, 'users', user.uid), {
+            email: email,
+            name: name,
+            displayName: name,
+            phone: phone || '',
+            role: 'citizen',
+            createdAt: serverTimestamp(),
+          });
+          
           console.log('✅ User profile created in Firestore');
           Alert.alert('Success', 'Account created successfully!');
-        } else {
-          // Profile creation failed but auth succeeded
-          console.error('⚠️ Profile creation failed:', profileResult.error);
+        } catch (profileError) {
+          console.error('⚠️ Profile creation failed:', profileError);
           Alert.alert(
             'Partial Success', 
             'Account created but profile setup incomplete. Please contact support.'
@@ -79,7 +79,6 @@ export default function AuthScreen() {
     } catch (error) {
       console.error('❌ Auth error:', error);
       
-      // ✅ Enhanced error handling
       let errorMessage = 'An error occurred';
       switch (error.code) {
         case 'auth/email-already-in-use':

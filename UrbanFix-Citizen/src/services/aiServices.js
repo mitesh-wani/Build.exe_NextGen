@@ -1,14 +1,28 @@
-// ==================== FILE 2: services/aiServices.js ====================
+// ==================== services/aiService.js ====================
 // AI Services using Gemini API for UrbanFix
+// Drop this file into your project's services folder
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-// Initialize Gemini AI
-const GEMINI_API_KEY = 'YOUR_GEMINI_API_KEY_HERE'; // Replace with your actual key
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+// Initialize Gemini AI with environment variable
+// Add EXPO_PUBLIC_GEMINI_API_KEY to your .env file
+const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || 'AIzaSyA_dHfbJWaj-qDlguHcpwo8Cg9WCvOksZg';
 
-// Issue categories
-const CATEGORIES = [
+let genAI = null;
+
+try {
+  if (GEMINI_API_KEY && GEMINI_API_KEY !== 'YOUR_GEMINI_API_KEY_HERE') {
+    genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+    console.log('✅ Gemini AI initialized successfully');
+  } else {
+    console.warn('⚠️ Gemini API key not found. AI features will use fallback mode.');
+  }
+} catch (error) {
+  console.error('❌ Failed to initialize Gemini AI:', error);
+}
+
+// Issue categories for UrbanFix
+export const CATEGORIES = [
   'Road Damage',
   'Street Lighting',
   'Garbage/Sanitation',
@@ -21,19 +35,30 @@ const CATEGORIES = [
   'Other'
 ];
 
+// ==================== MAIN AI FUNCTIONS ====================
+
 /**
- * Classify issue using Gemini AI based on description and image
+ * Classify issue using Gemini AI based on description and optional image
+ * @param {string} description - Issue description
+ * @param {string|null} imageBase64 - Base64 encoded image (optional)
+ * @returns {Promise<Object>} Classification result
  */
 export const classifyIssue = async (description, imageBase64 = null) => {
+  // If AI is not available, use fallback
+  if (!genAI) {
+    console.log('⚠️ Using fallback classification');
+    return getFallbackClassification(description);
+  }
+
   try {
     const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
     
-    let prompt = `You are an AI assistant for a civic complaint platform. Analyze the following complaint and classify it into ONE of these categories:
+    const prompt = `You are an AI assistant for UrbanFix, a civic complaint platform. Analyze the following complaint and classify it into ONE of these categories:
 ${CATEGORIES.join(', ')}
 
 Complaint Description: "${description}"
 
-Respond ONLY with a JSON object in this exact format:
+Respond ONLY with a JSON object in this exact format (no markdown, no code blocks):
 {
   "category": "category name from the list above",
   "priority": "low/medium/high/critical",
@@ -43,14 +68,15 @@ Respond ONLY with a JSON object in this exact format:
 }
 
 Priority Guidelines:
-- Critical: Safety hazards, major infrastructure damage, health risks
-- High: Significant inconvenience, moderate damage
-- Medium: General complaints, minor issues
-- Low: Cosmetic issues, suggestions
+- Critical: Immediate safety hazards, major infrastructure damage, severe health risks
+- High: Significant public inconvenience, moderate damage, urgent attention needed
+- Medium: General complaints, minor issues, standard response time
+- Low: Cosmetic issues, suggestions, non-urgent matters
 
 Be accurate and concise.`;
 
     let result;
+    
     if (imageBase64) {
       // Analyze with image
       const imagePart = {
@@ -60,22 +86,25 @@ Be accurate and concise.`;
         }
       };
       
-      prompt += '\n\nAdditionally, analyze the provided image to better understand the issue.';
-      result = await model.generateContent([prompt, imagePart]);
+      const enhancedPrompt = prompt + '\n\nAdditionally, analyze the provided image to better understand the issue and validate the classification.';
+      result = await model.generateContent([enhancedPrompt, imagePart]);
     } else {
-      // Text only
+      // Text only analysis
       result = await model.generateContent(prompt);
     }
     
     const response = await result.response;
     const text = response.text();
     
-    // Parse JSON response
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    // Clean and parse JSON response (handle potential markdown formatting)
+    const cleanedText = text.replace(/```json\n?|\n?```/g, '').trim();
+    const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
+    
     if (jsonMatch) {
       const analysis = JSON.parse(jsonMatch[0]);
       
-      console.log('✅ AI Classification:', analysis);
+      console.log('✅ AI Classification successful:', analysis.category);
+      
       return {
         success: true,
         data: {
@@ -83,34 +112,33 @@ Be accurate and concise.`;
           priority: analysis.priority,
           keywords: analysis.keywords || [],
           confidence: analysis.confidence || 0.8,
-          reasoning: analysis.reasoning || ''
-        }
+          reasoning: analysis.reasoning || 'AI classified the issue successfully'
+        },
+        isAI: true
       };
     }
     
     throw new Error('Invalid AI response format');
     
   } catch (error) {
-    console.error('❌ AI Classification Error:', error);
-    return {
-      success: false,
-      error: error.message,
-      // Fallback classification
-      data: {
-        category: 'Other',
-        priority: 'medium',
-        keywords: [],
-        confidence: 0.5,
-        reasoning: 'AI classification failed, using default'
-      }
-    };
+    console.error('❌ AI Classification Error:', error.message);
+    // Fallback to keyword-based classification
+    return getFallbackClassification(description);
   }
 };
 
 /**
- * Detect duplicate issues
+ * Detect duplicate issues using AI and location proximity
+ * @param {Object} newIssue - New issue to check
+ * @param {Array} existingIssues - Array of existing issues
+ * @returns {Promise<Object>} Duplicate detection result
  */
 export const detectDuplicateIssues = async (newIssue, existingIssues) => {
+  if (!genAI) {
+    console.log('⚠️ AI not available for duplicate detection');
+    return { success: true, isDuplicate: false, duplicateOf: null };
+  }
+
   try {
     if (!existingIssues || existingIssues.length === 0) {
       return { success: true, isDuplicate: false, duplicateOf: null };
@@ -118,7 +146,7 @@ export const detectDuplicateIssues = async (newIssue, existingIssues) => {
     
     const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
     
-    // Filter recent issues in similar location (within 500m)
+    // Filter nearby issues (within 500 meters)
     const nearbyIssues = existingIssues.filter(issue => {
       if (!issue.location || !newIssue.location) return false;
       
@@ -129,112 +157,261 @@ export const detectDuplicateIssues = async (newIssue, existingIssues) => {
         issue.location.lng
       );
       
-      return distance < 0.5; // 500 meters
+      return distance < 0.5; // 500 meters radius
     });
     
     if (nearbyIssues.length === 0) {
+      console.log('✅ No nearby issues found');
       return { success: true, isDuplicate: false, duplicateOf: null };
     }
     
-    // Prepare comparison for AI
+    // Prepare comparison data for AI
     const comparisons = nearbyIssues.map((issue, idx) => 
-      `Issue ${idx + 1}: ${issue.title} - ${issue.description}`
-    ).join('\n');
+      `Issue ${idx + 1} (ID: ${issue.id || 'unknown'}):
+Title: ${issue.title}
+Description: ${issue.description}
+Category: ${issue.category}
+Status: ${issue.status}
+Distance: ${calculateDistance(newIssue.location.lat, newIssue.location.lng, issue.location.lat, issue.location.lng).toFixed(2)} km`
+    ).join('\n\n');
     
     const prompt = `Analyze if this new complaint is a duplicate of any existing nearby complaints.
 
-New Complaint:
+NEW COMPLAINT:
 Title: ${newIssue.title}
 Description: ${newIssue.description}
 Category: ${newIssue.category}
 
-Existing Nearby Complaints:
+EXISTING NEARBY COMPLAINTS (within 500m):
 ${comparisons}
 
-Respond ONLY with JSON:
+Respond ONLY with JSON (no markdown):
 {
   "isDuplicate": true/false,
   "duplicateOfIndex": number (0-based index, or null if not duplicate),
-  "similarity": 0-100 (percentage),
-  "reasoning": "brief explanation"
-}`;
+  "similarity": 0-100 (percentage similarity),
+  "reasoning": "brief explanation of why it is or isn't a duplicate"
+}
+
+Consider: Same location, similar description, same category, matching keywords.`;
 
     const result = await model.generateContent(prompt);
     const response = await result.response;
     const text = response.text();
     
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    const cleanedText = text.replace(/```json\n?|\n?```/g, '').trim();
+    const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
+    
     if (jsonMatch) {
       const analysis = JSON.parse(jsonMatch[0]);
       
       if (analysis.isDuplicate && analysis.duplicateOfIndex !== null) {
         const duplicateIssue = nearbyIssues[analysis.duplicateOfIndex];
-        console.log('✅ Duplicate detected:', duplicateIssue.id);
+        console.log(`✅ Duplicate detected: ${duplicateIssue.id} (${analysis.similarity}% match)`);
         
         return {
           success: true,
           isDuplicate: true,
           duplicateOf: duplicateIssue.id,
+          duplicateIssue: duplicateIssue,
           similarity: analysis.similarity,
           reasoning: analysis.reasoning
         };
       }
     }
     
+    console.log('✅ No duplicates found');
     return { success: true, isDuplicate: false, duplicateOf: null };
     
   } catch (error) {
-    console.error('❌ Duplicate Detection Error:', error);
+    console.error('❌ Duplicate Detection Error:', error.message);
+    // On error, don't block issue submission
     return { success: true, isDuplicate: false, duplicateOf: null };
   }
 };
 
 /**
- * Generate automated response/suggestion
+ * Generate helpful suggestions and information for an issue
+ * @param {Object} issueData - Issue data object
+ * @returns {Promise<Object>} Suggestion result
  */
 export const generateIssueSuggestion = async (issueData) => {
+  if (!genAI) {
+    console.log('⚠️ AI not available for suggestions');
+    return {
+      success: false,
+      error: 'AI service not available'
+    };
+  }
+
   try {
     const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
     
-    const prompt = `As a civic assistant, provide helpful information about this complaint:
+    const prompt = `As a civic assistant for UrbanFix (Nagpur Municipal Corporation), provide helpful information about this complaint:
 
 Category: ${issueData.category}
 Description: ${issueData.description}
 Priority: ${issueData.priority}
+Location: ${issueData.location?.address || 'Not specified'}
 
-Provide:
-1. Expected resolution timeframe
-2. Which department typically handles this
-3. Any immediate actions the citizen can take
-4. Similar common issues
+Provide practical information:
+1. Expected resolution timeframe (be realistic for Indian municipal corporations)
+2. Which department typically handles this type of issue
+3. Any immediate actions the citizen can take while waiting
+4. Brief helpful information about similar issues
 
-Respond in JSON format:
+Respond in JSON format (no markdown):
 {
-  "expectedTimeframe": "timeframe estimate",
-  "department": "department name",
-  "citizenActions": ["action1", "action2"],
-  "relatedInfo": "helpful information"
+  "expectedTimeframe": "realistic timeframe estimate",
+  "department": "specific department name",
+  "citizenActions": ["action1", "action2", "action3"],
+  "relatedInfo": "brief helpful information"
 }`;
 
     const result = await model.generateContent(prompt);
     const response = await result.response;
     const text = response.text();
     
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    const cleanedText = text.replace(/```json\n?|\n?```/g, '').trim();
+    const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
+    
     if (jsonMatch) {
       const suggestion = JSON.parse(jsonMatch[0]);
+      console.log('✅ AI suggestion generated');
       return { success: true, data: suggestion };
     }
     
     throw new Error('Invalid response format');
     
   } catch (error) {
-    console.error('❌ Suggestion Generation Error:', error);
+    console.error('❌ Suggestion Generation Error:', error.message);
     return { success: false, error: error.message };
   }
 };
 
-// Helper: Calculate distance between two coordinates (Haversine formula)
+/**
+ * Analyze issue image for additional context (if needed separately)
+ * @param {string} imageBase64 - Base64 encoded image
+ * @returns {Promise<Object>} Image analysis result
+ */
+export const analyzeIssueImage = async (imageBase64) => {
+  if (!genAI) {
+    return { success: false, error: 'AI service not available' };
+  }
+
+  try {
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    
+    const prompt = `Analyze this civic infrastructure image and provide:
+1. What type of issue is visible?
+2. Severity assessment
+3. Any safety concerns
+4. Recommended category
+
+Respond in JSON:
+{
+  "issueType": "description of what's visible",
+  "severity": "low/medium/high/critical",
+  "safetyConcerns": ["concern1", "concern2"],
+  "suggestedCategory": "category name"
+}`;
+
+    const imagePart = {
+      inlineData: {
+        data: imageBase64,
+        mimeType: 'image/jpeg'
+      }
+    };
+
+    const result = await model.generateContent([prompt, imagePart]);
+    const response = await result.response;
+    const text = response.text();
+    
+    const cleanedText = text.replace(/```json\n?|\n?```/g, '').trim();
+    const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
+    
+    if (jsonMatch) {
+      return { success: true, data: JSON.parse(jsonMatch[0]) };
+    }
+    
+    throw new Error('Invalid response format');
+    
+  } catch (error) {
+    console.error('❌ Image Analysis Error:', error.message);
+    return { success: false, error: error.message };
+  }
+};
+
+// ==================== HELPER FUNCTIONS ====================
+
+/**
+ * Fallback classification when AI is unavailable (keyword-based)
+ */
+function getFallbackClassification(description) {
+  const lowerDesc = description.toLowerCase();
+  let category = 'Other';
+  let priority = 'medium';
+  const keywords = [];
+
+  // Keyword-based classification rules
+  if (lowerDesc.includes('pothole') || lowerDesc.includes('crack') || lowerDesc.includes('road damage')) {
+    category = 'Road Damage';
+    priority = 'high';
+    keywords.push('road', 'damage', 'pothole');
+  } else if (lowerDesc.includes('street light') || lowerDesc.includes('lamp') || lowerDesc.includes('light not working')) {
+    category = 'Street Lighting';
+    priority = 'medium';
+    keywords.push('lighting', 'electricity', 'street light');
+  } else if (lowerDesc.includes('garbage') || lowerDesc.includes('trash') || lowerDesc.includes('waste') || lowerDesc.includes('dirt')) {
+    category = 'Garbage/Sanitation';
+    priority = 'medium';
+    keywords.push('garbage', 'sanitation', 'waste');
+  } else if (lowerDesc.includes('water') || lowerDesc.includes('leak') || lowerDesc.includes('supply')) {
+    category = 'Water Supply';
+    priority = 'high';
+    keywords.push('water', 'supply', 'leak');
+  } else if (lowerDesc.includes('drain') || lowerDesc.includes('sewer') || lowerDesc.includes('overflow')) {
+    category = 'Drainage/Sewerage';
+    priority = 'high';
+    keywords.push('drainage', 'sewer', 'overflow');
+  } else if (lowerDesc.includes('traffic') || lowerDesc.includes('signal') || lowerDesc.includes('light')) {
+    category = 'Traffic Signal';
+    priority = 'medium';
+    keywords.push('traffic', 'signal');
+  } else if (lowerDesc.includes('noise') || lowerDesc.includes('loud') || lowerDesc.includes('pollution')) {
+    category = 'Noise Pollution';
+    priority = 'low';
+    keywords.push('noise', 'pollution');
+  } else if (lowerDesc.includes('construction') || lowerDesc.includes('illegal') || lowerDesc.includes('building')) {
+    category = 'Illegal Construction';
+    priority = 'medium';
+    keywords.push('construction', 'illegal');
+  } else if (lowerDesc.includes('park') || lowerDesc.includes('bench') || lowerDesc.includes('public property')) {
+    category = 'Public Property Damage';
+    priority = 'low';
+    keywords.push('property', 'damage');
+  }
+
+  console.log('✅ Fallback classification:', category);
+
+  return {
+    success: true,
+    data: {
+      category,
+      priority,
+      keywords,
+      confidence: 0.6,
+      reasoning: 'Keyword-based classification (AI unavailable)'
+    },
+    isAI: false,
+    isFallback: true
+  };
+}
+
+/**
+ * Calculate distance between two coordinates using Haversine formula
+ * @returns {number} Distance in kilometers
+ */
 function calculateDistance(lat1, lon1, lat2, lon2) {
   const R = 6371; // Earth's radius in km
   const dLat = toRad(lat2 - lat1);
@@ -253,226 +430,99 @@ function toRad(degrees) {
   return degrees * (Math.PI / 180);
 }
 
-
-// ==================== FILE 3: scripts/seedData.js ====================
-// Initial seed data for UrbanFix database
-
-import { 
-  collection, 
-  addDoc, 
-  setDoc,
-  doc,
-  serverTimestamp 
-} from 'firebase/firestore';
-import { db } from '../config/firebase';
+/**
+ * Convert image URI to base64 (for React Native)
+ * @param {string} imageUri - Image URI from camera/gallery
+ * @returns {Promise<string>} Base64 encoded image
+ */
+export const imageUriToBase64 = async (imageUri) => {
+  try {
+    // For React Native, use fetch to convert to base64
+    const response = await fetch(imageUri);
+    const blob = await response.blob();
+    
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        // Remove data URL prefix to get pure base64
+        const base64 = reader.result.split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (error) {
+    console.error('Error converting image to base64:', error);
+    throw error;
+  }
+};
 
 /**
- * Seed Departments
+ * Batch classify multiple issues (useful for migration/bulk operations)
+ * @param {Array} issues - Array of issue objects
+ * @returns {Promise<Array>} Array of classification results
  */
-export const seedDepartments = async () => {
-  try {
-    console.log('🌱 Seeding departments...');
-    
-    const departments = [
-      {
-        name: 'Public Works Department',
-        description: 'Handles road maintenance, infrastructure, and public property',
-        categories: ['Road Damage', 'Public Property Damage', 'Illegal Construction'],
-        officers: []
-      },
-      {
-        name: 'Electricity Department',
-        description: 'Manages street lighting and electrical infrastructure',
-        categories: ['Street Lighting'],
-        officers: []
-      },
-      {
-        name: 'Sanitation Department',
-        description: 'Responsible for waste management and cleanliness',
-        categories: ['Garbage/Sanitation'],
-        officers: []
-      },
-      {
-        name: 'Water Supply Department',
-        description: 'Manages water distribution and supply systems',
-        categories: ['Water Supply'],
-        officers: []
-      },
-      {
-        name: 'Drainage Department',
-        description: 'Handles sewerage and drainage systems',
-        categories: ['Drainage/Sewerage'],
-        officers: []
-      },
-      {
-        name: 'Traffic Department',
-        description: 'Manages traffic signals and road safety',
-        categories: ['Traffic Signal'],
-        officers: []
-      },
-      {
-        name: 'Environment Department',
-        description: 'Handles environmental and pollution complaints',
-        categories: ['Noise Pollution'],
-        officers: []
-      }
-    ];
-    
-    const departmentsRef = collection(db, 'departments');
-    
-    for (const dept of departments) {
-      await addDoc(departmentsRef, {
-        ...dept,
-        createdAt: serverTimestamp()
+export const batchClassifyIssues = async (issues) => {
+  const results = [];
+  
+  for (const issue of issues) {
+    try {
+      const result = await classifyIssue(issue.description);
+      results.push({
+        issueId: issue.id,
+        ...result
+      });
+      
+      // Rate limiting: wait 1 second between requests
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    } catch (error) {
+      console.error(`Error classifying issue ${issue.id}:`, error);
+      results.push({
+        issueId: issue.id,
+        success: false,
+        error: error.message
       });
     }
-    
-    console.log('✅ Departments seeded successfully');
-    return { success: true };
-  } catch (error) {
-    console.error('❌ Error seeding departments:', error);
-    return { success: false, error: error.message };
   }
+  
+  return results;
 };
 
 /**
- * Create sample authority user
+ * Check if AI service is available
+ * @returns {boolean}
  */
-export const createSampleAuthority = async () => {
-  try {
-    console.log('🌱 Creating sample authority user...');
-    
-    const sampleAuthority = {
-      uid: 'sample_authority_001',
-      email: 'authority@urbanfix.com',
-      displayName: 'Municipal Officer',
-      phone: '+91-9876543210',
-      role: 'authority',
-      department: 'Public Works Department',
-      location: {
-        lat: 21.1458,
-        lng: 79.0882,
-        address: 'Nagpur, Maharashtra'
-      },
-      photoURL: null,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    };
-    
-    const userRef = doc(db, 'users', 'sample_authority_001');
-    await setDoc(userRef, sampleAuthority);
-    
-    console.log('✅ Sample authority created');
-    return { success: true };
-  } catch (error) {
-    console.error('❌ Error creating sample authority:', error);
-    return { success: false, error: error.message };
-  }
+export const isAIAvailable = () => {
+  return genAI !== null;
 };
 
 /**
- * Create sample issues for testing
+ * Get AI service status
+ * @returns {Object} Status information
  */
-export const createSampleIssues = async (userId) => {
-  try {
-    console.log('🌱 Creating sample issues...');
-    
-    const sampleIssues = [
-      {
-        userId: userId,
-        userName: 'Test User',
-        userPhone: '+91-1234567890',
-        title: 'Large pothole on Main Street',
-        description: 'There is a dangerous pothole near the traffic signal that needs immediate attention.',
-        category: 'Road Damage',
-        priority: 'high',
-        status: 'pending',
-        location: {
-          lat: 21.1458,
-          lng: 79.0882,
-          address: 'Main Street, Nagpur'
-        },
-        photos: [],
-        aiAnalysis: {
-          detectedCategory: 'Road Damage',
-          confidence: 0.95,
-          keywords: ['pothole', 'road', 'damage']
-        },
-        assignedTo: null,
-        assignedOfficerName: null,
-        departmentId: null,
-        resolutionProof: [],
-        resolutionNote: '',
-        isDuplicate: false,
-        duplicateOf: null
-      },
-      {
-        userId: userId,
-        userName: 'Test User',
-        userPhone: '+91-1234567890',
-        title: 'Street light not working',
-        description: 'Street light pole #45 has been non-functional for 3 days.',
-        category: 'Street Lighting',
-        priority: 'medium',
-        status: 'pending',
-        location: {
-          lat: 21.1478,
-          lng: 79.0892,
-          address: 'Park Road, Nagpur'
-        },
-        photos: [],
-        aiAnalysis: {
-          detectedCategory: 'Street Lighting',
-          confidence: 0.92,
-          keywords: ['street light', 'electricity', 'lighting']
-        },
-        assignedTo: null,
-        assignedOfficerName: null,
-        departmentId: null,
-        resolutionProof: [],
-        resolutionNote: '',
-        isDuplicate: false,
-        duplicateOf: null
-      }
-    ];
-    
-    const issuesRef = collection(db, 'issues');
-    
-    for (const issue of sampleIssues) {
-      await addDoc(issuesRef, {
-        ...issue,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        resolvedAt: null
-      });
+export const getAIStatus = () => {
+  return {
+    available: genAI !== null,
+    apiKeyConfigured: GEMINI_API_KEY !== 'YOUR_GEMINI_API_KEY_HERE',
+    model: 'gemini-1.5-flash',
+    features: {
+      classification: true,
+      duplicateDetection: true,
+      suggestions: true,
+      imageAnalysis: true
     }
-    
-    console.log('✅ Sample issues created');
-    return { success: true };
-  } catch (error) {
-    console.error('❌ Error creating sample issues:', error);
-    return { success: false, error: error.message };
-  }
+  };
 };
 
-/**
- * Run all seed functions
- */
-export const seedDatabase = async (userId = null) => {
-  try {
-    console.log('🌱 Starting database seed...');
-    
-    await seedDepartments();
-    await createSampleAuthority();
-    
-    if (userId) {
-      await createSampleIssues(userId);
-    }
-    
-    console.log('✅ Database seeded successfully!');
-    return { success: true };
-  } catch (error) {
-    console.error('❌ Error seeding database:', error);
-    return { success: false, error: error.message };
-  }
+// Export all functions
+export default {
+  classifyIssue,
+  detectDuplicateIssues,
+  generateIssueSuggestion,
+  analyzeIssueImage,
+  imageUriToBase64,
+  batchClassifyIssues,
+  isAIAvailable,
+  getAIStatus,
+  CATEGORIES
 };

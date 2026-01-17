@@ -14,11 +14,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import { auth } from '../services/firebase'; // ✅ Updated import
+import { auth } from '../services/firebase';
 import { 
   getUserIssues, 
-  subscribeToUserIssues // ✅ Real-time listener
-} from '../services/firebaseServices'; // ✅ Import services
+  subscribeToUserIssues 
+} from '../services/firebaseServices'; // ✅ Use services
 
 import { 
   COLORS, 
@@ -33,7 +33,7 @@ import {
 const STATUS_FILTERS = [
   { id: 'all', label: 'All', color: COLORS.gray[600] },
   { id: 'pending', label: 'Pending', ...ISSUE_STATUS.PENDING },
-  { id: 'in-progress', label: 'In Progress', ...ISSUE_STATUS.IN_PROGRESS }, // ✅ Fixed to match service
+  { id: 'in_progress', label: 'In Progress', ...ISSUE_STATUS.IN_PROGRESS },
   { id: 'resolved', label: 'Resolved', ...ISSUE_STATUS.RESOLVED },
 ];
 
@@ -44,39 +44,31 @@ export default function MyIssuesScreen() {
   const [selectedFilter, setSelectedFilter] = useState('all');
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [unsubscribe, setUnsubscribe] = useState(null);
 
-  // Refresh on screen focus
+  // ✅ Refresh on screen focus
   useFocusEffect(
     React.useCallback(() => {
       fetchIssues();
-      setupRealtimeListener();
       
-      return () => {
-        if (unsubscribe) {
-          unsubscribe();
-        }
-      };
+      // Set up real-time listener
+      const userId = auth.currentUser?.uid;
+      if (userId) {
+        const unsubscribe = subscribeToUserIssues(userId, (updatedIssues) => {
+          console.log('✅ Issues updated in real-time:', updatedIssues.length);
+          setIssues(updatedIssues);
+          setLoading(false);
+        });
+        
+        return () => {
+          if (unsubscribe) unsubscribe();
+        };
+      }
     }, [])
   );
 
   useEffect(() => {
     filterIssues();
   }, [selectedFilter, issues]);
-
-  // ✅ Set up real-time listener
-  const setupRealtimeListener = () => {
-    const userId = auth.currentUser?.uid;
-    if (!userId) return;
-
-    const unsubscribeFn = subscribeToUserIssues(userId, (updatedIssues) => {
-      console.log('✅ Real-time update: User issues', updatedIssues.length);
-      setIssues(updatedIssues);
-      setLoading(false);
-    });
-
-    setUnsubscribe(() => unsubscribeFn);
-  };
 
   const fetchIssues = async () => {
     try {
@@ -87,19 +79,18 @@ export default function MyIssuesScreen() {
         return;
       }
 
-      // ✅ Use service function instead of direct Firestore query
       const result = await getUserIssues(userId);
-
+      
       if (result.success) {
-        console.log(`✅ Fetched ${result.data.length} user issues`);
         setIssues(result.data);
+        console.log(`✅ Fetched ${result.data.length} user issues`);
       } else {
-        console.error('❌ Error fetching issues:', result.error);
-        Alert.alert('Error', 'Failed to load your issues. Please try again.');
+        console.error('❌ Error:', result.error);
+        Alert.alert('Error', 'Failed to load your issues');
       }
     } catch (error) {
       console.error('❌ Unexpected error:', error);
-      Alert.alert('Error', 'Something went wrong');
+      Alert.alert('Error', 'Failed to load your issues. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -127,30 +118,27 @@ export default function MyIssuesScreen() {
   const formatDate = (date) => {
     if (!date) return '—';
     
-    // ✅ Handle both Date objects and timestamps
-    const dateObj = date instanceof Date ? date : new Date(date);
-    
     const now = new Date();
-    const diff = now - dateObj;
+    const diff = now - date;
     const days = Math.floor(diff / 86400000);
     
     if (days === 0) return 'Today';
     if (days === 1) return 'Yesterday';
     if (days < 7) return `${days}d ago`;
     
-    return dateObj.toLocaleDateString('en-US', {
+    return date.toLocaleDateString('en-US', {
       day: 'numeric',
       month: 'short',
-      year: dateObj.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+      year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
     });
   };
 
   const renderIssueCard = ({ item }) => {
-    const statusInfo = ISSUE_STATUS[item.status?.toUpperCase().replace('-', '_')] || ISSUE_STATUS.PENDING;
+    const statusInfo = ISSUE_STATUS[item.status?.toUpperCase()] || ISSUE_STATUS.PENDING;
     const priorityInfo = PRIORITY_LEVELS[item.priority?.toUpperCase()] || PRIORITY_LEVELS.MEDIUM;
     const categoryInfo = getCategoryInfo(item.category);
 
-    // ✅ Use photos array from service
+    // ✅ Get image from photos array
     const imageUrl = item.photos && item.photos.length > 0 ? item.photos[0] : null;
 
     return (
@@ -199,7 +187,6 @@ export default function MyIssuesScreen() {
             <View style={styles.locationRow}>
               <Ionicons name="location" size={14} color={COLORS.primary} />
               <Text style={styles.location} numberOfLines={1}>
-                {/* ✅ Use location.address from service structure */}
                 {item.location?.address || 'Location'}
               </Text>
             </View>
@@ -231,8 +218,7 @@ export default function MyIssuesScreen() {
           <Ionicons name="construct" size={20} color={COLORS.info} />
         </View>
         <Text style={styles.statNumber}>
-          {/* ✅ Fixed status name */}
-          {issues.filter(i => i.status === 'in-progress' || i.status === 'assigned').length}
+          {issues.filter(i => i.status === 'in_progress').length}
         </Text>
         <Text style={styles.statLabel}>In Progress</Text>
       </View>
@@ -334,7 +320,7 @@ export default function MyIssuesScreen() {
               />
             </View>
             <Text style={styles.emptyTitle}>
-              {selectedFilter === 'all' ? 'No Reports Yet' : `No ${selectedFilter.replace('-', ' ')} issues`}
+              {selectedFilter === 'all' ? 'No Reports Yet' : `No ${selectedFilter.replace('_', ' ')} issues`}
             </Text>
             <Text style={styles.emptySubtitle}>
               {selectedFilter === 'all'

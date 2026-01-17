@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { db, storage } from '../firebase';
+import { db, storage, auth } from '../firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Container, TextField, Button, Typography, Paper, Alert, CircularProgress } from '@mui/material';
@@ -45,8 +45,10 @@ function CitizenReport() {
         imageUrl: imageUrl,
         latitude: location.lat,
         longitude: location.lng,
-        status: "Pending AI", // Triggers the Cloud Function
+        status: "Pending AI",
         createdAt: serverTimestamp(),
+        // ADD THIS: Include userId for the security rules
+        userId: auth.currentUser ? auth.currentUser.uid : null,
         // Default fields for AI to fill later
         category: "Analyzing...", 
         priority: "Analyzing..."
@@ -58,7 +60,7 @@ function CitizenReport() {
       setLocation(null);
     } catch (err) {
       console.error(err);
-      alert("Error submitting report.");
+      alert("Error submitting report: " + err.message);
     }
     setLoading(false);
   };
