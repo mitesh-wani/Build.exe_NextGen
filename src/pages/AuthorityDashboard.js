@@ -6,48 +6,69 @@ import { useNavigate } from 'react-router-dom';
 import { 
   Box, Typography, Button, Grid, Paper, Table, TableBody, TableCell, 
   TableHead, TableRow, Chip, Link, List, ListItem, ListItemButton, 
-  ListItemIcon, ListItemText, Divider 
+  ListItemIcon, ListItemText 
 } from '@mui/material';
 
 // Icons
 import DashboardIcon from '@mui/icons-material/Dashboard';
-import ListIcon from '@mui/icons-material/List'; // For Issues
-import MapIcon from '@mui/icons-material/Map';   // For Map
-import BarChartIcon from '@mui/icons-material/BarChart'; // For Analytics
+import ListIcon from '@mui/icons-material/List';
+import MapIcon from '@mui/icons-material/Map';
+import BarChartIcon from '@mui/icons-material/BarChart';
 import LogoutIcon from '@mui/icons-material/Logout';
 
 // Import Your Other Pages
-// (Ensure these files exist in src/pages/ exactly as named)
 import Issues from './Issues';
 import MapView from './MapView';
 import Analytics from './Analytics';
 
 function AuthorityDashboard() {
   const [issues, setIssues] = useState([]);
-  const [currentView, setCurrentView] = useState('Dashboard'); // Controls the active tab
+  const [currentView, setCurrentView] = useState('Dashboard');
   const navigate = useNavigate();
 
-  // Fetch Data (Always needed for the Dashboard view)
+  // Fetch Data
   useEffect(() => {
     const q = query(collection(db, "issues"), orderBy("createdAt", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setIssues(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      console.error("Error fetching issues:", error);
     });
     return () => unsubscribe();
   }, []);
 
   const handleLogout = async () => {
-    await signOut(auth);
-    navigate('/');
+    try {
+      await signOut(auth);
+      navigate('/');
+    } catch (error) {
+      console.error("Logout error:", error);
+      alert("Error logging out. Please try again.");
+    }
   };
 
   const resolveIssue = async (id) => {
-    const proofUrl = prompt("Enter Proof URL (or leave empty for demo):", "http://via.placeholder.com/150");
-    if (proofUrl) {
-      await updateDoc(doc(db, "issues", id), {
+    try {
+      const proofUrl = prompt("Enter Proof URL (or leave empty for demo):", "http://via.placeholder.com/150");
+      
+      // If user cancels the prompt, proofUrl will be null
+      if (proofUrl === null) {
+        return; // User cancelled
+      }
+      
+      // Update the document
+      const issueRef = doc(db, "issues", id);
+      await updateDoc(issueRef, {
         status: "Resolved",
-        resolutionProof: proofUrl
+        resolutionProof: proofUrl || "http://via.placeholder.com/150",
+        resolvedAt: new Date().toISOString()
       });
+      
+      console.log("Issue resolved successfully!");
+      
+    } catch (error) {
+      console.error("Error resolving issue:", error);
+      alert(`Failed to resolve issue: ${error.message}`);
     }
   };
 
@@ -163,25 +184,39 @@ function AuthorityDashboard() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {issues.slice(0, 5).map((issue) => ( // Showing only top 5 recent
+                  {issues.slice(0, 5).map((issue) => (
                     <TableRow key={issue.id} hover>
                       <TableCell>
                         {issue.imageUrl ? (
-                          <Link href={issue.imageUrl} target="_blank">
+                          <Link href={issue.imageUrl} target="_blank" rel="noopener noreferrer">
                             <img src={issue.imageUrl} alt="proof" width="40" height="40" style={{borderRadius: 5}}/>
                           </Link>
                         ) : "N/A"}
                       </TableCell>
-                      <TableCell>{issue.category}</TableCell>
+                      <TableCell>{issue.category || "N/A"}</TableCell>
                       <TableCell>
-                        <Chip label={issue.priority} color={issue.priority === 'High' ? 'error' : 'warning'} size="small" />
+                        <Chip 
+                          label={issue.priority || "N/A"} 
+                          color={issue.priority === 'High' ? 'error' : 'warning'} 
+                          size="small" 
+                        />
                       </TableCell>
                       <TableCell>
-                        <Chip label={issue.status} color={issue.status === 'Resolved' ? 'success' : 'default'} variant="outlined" size="small" />
+                        <Chip 
+                          label={issue.status || "Pending"} 
+                          color={issue.status === 'Resolved' ? 'success' : 'default'} 
+                          variant="outlined" 
+                          size="small" 
+                        />
                       </TableCell>
                       <TableCell>
                         {issue.status !== 'Resolved' && (
-                          <Button size="small" variant="contained" color="success" onClick={() => resolveIssue(issue.id)}>
+                          <Button 
+                            size="small" 
+                            variant="contained" 
+                            color="success" 
+                            onClick={() => resolveIssue(issue.id)}
+                          >
                             Resolve
                           </Button>
                         )}
