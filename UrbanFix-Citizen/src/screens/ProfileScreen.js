@@ -13,7 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../../firebaseConfig';
+import { auth, db } from '../services/firebase';
 
 // Import theme constants (adjust path if needed)
 import { COLORS, SPACING, BORDER_RADIUS, SIZES } from '../constants/theme';

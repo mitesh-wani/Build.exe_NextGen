@@ -1,6 +1,6 @@
-// src/services/firebase.js
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getAuth, initializeAuth, getReactNativePersistence } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore'; // Added Firestore
 import { getStorage } from 'firebase/storage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -14,15 +14,8 @@ const firebaseConfig = {
   appId: "1:524005116119:web:d8f1d9252cfe5afceb0892",
 };
 
-// Initialize Firebase
-let app;
-try {
-  app = initializeApp(firebaseConfig);
-  console.log('✅ Firebase initialized successfully');
-} catch (error) {
-  console.error('❌ Firebase initialization error:', error);
-  throw error;
-}
+// Initialize Firebase (Prevents re-initialization during Hot Reloads)
+const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
 // Initialize Auth with AsyncStorage persistence
 let auth;
@@ -30,15 +23,15 @@ try {
   auth = initializeAuth(app, {
     persistence: getReactNativePersistence(AsyncStorage)
   });
-  console.log('✅ Firebase Auth initialized');
 } catch (error) {
-  // If already initialized, get the existing instance
-  console.log('ℹ️ Auth already initialized, getting existing instance');
-  auth = getAuth(app);
+  auth = getAuth(app); // Fallback if already initialized
 }
+
+// Initialize Firestore (The "db" your HomeScreen is looking for)
+const db = getFirestore(app);
 
 // Initialize Storage
 const storage = getStorage(app);
-console.log('✅ Firebase Storage initialized');
 
-export { app, auth, storage };
+// Export all services
+export { app, auth, db, storage };
