@@ -120,8 +120,8 @@ function LandingPage() {
 
           {/* Main Headline */}
           <Typography variant="h2" component="h1" fontWeight="900" sx={{ mb: 2, lineHeight: 1.1, fontSize: { xs: '2.5rem', md: '4rem' } }}>
-            Fixing Our City, <br />
-            <span style={{ color: '#4fc3f7' }}>Together.</span>
+            Report Local Issues <br />
+            <span style={{ color: '#4fc3f7' }}> Make Your City Better.</span>
           </Typography>
           
           <Typography variant="h6" sx={{ mb: 6, opacity: 0.85, maxWidth: '650px', mx: 'auto', lineHeight: 1.6, fontWeight: 300 }}>

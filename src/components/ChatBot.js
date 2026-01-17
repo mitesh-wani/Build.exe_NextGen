@@ -1,4 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { 
+  Box, Paper, Typography, IconButton, InputBase, Fab, Fade, Zoom, Chip, Avatar 
+} from '@mui/material';
+import { 
+  Close as CloseIcon, 
+  Send as SendIcon 
+} from '@mui/icons-material';
 
 const ChatBot = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -7,181 +14,157 @@ const ChatBot = () => {
   const [suggestedQuestions, setSuggestedQuestions] = useState([]);
   const messagesEndRef = useRef(null);
 
-  // 1. FAQ Data - Customized for website understanding
+  // --- YOUR CUSTOM IMAGE URL ---
+  const botImage = "https://files.bpcontent.cloud/2025/08/12/08/20250812085157-Y4781J4O.png";
+
+  // FAQ Data (Core Functionality)
   const faqData = [
-    {
-      question: 'What is this platform?',
-      answer: 'Civix is a community engagement platform designed to connect citizens with local authorities. We help you report infrastructure issues and track their resolution.'
-    },
-    {
-      question: 'How do I report an issue?',
-      answer: 'Click the "Report Issue" button on the homepage. You will need to provide a description, location, and optionally upload a photo.'
-    },
-    {
-      question: 'How can I track my reported issue?',
-      answer: 'Go to "My Reports" in your profile. Each issue shows a status: Open, In Progress, or Resolved.'
-    },
-    {
-      question: 'What types of issues can I report?',
-      answer: 'You can report potholes, broken streetlights, garbage collection problems, water leaks, and other public infrastructure issues.'
-    },
-    {
-      question: 'Who sees my reports?',
-      answer: 'Reports are visible to city administrators and community members. Your personal contact info remains private.'
-    }
+    { question: 'What is this platform?', answer: 'Civix connects citizens with local authorities to fix infrastructure issues efficiently.' },
+    { question: 'How do I report an issue?', answer: 'Click the "Report Issue" button, snap a photo, and our AI will handle the rest.' },
+    { question: 'How can I track my report?', answer: 'Go to your Dashboard or Profile to see real-time updates on your tickets.' },
+    { question: 'Is it free?', answer: 'Yes, this is a free public service for all citizens.' }
   ];
 
-  // 2. Initialize Chat
+  // Initialize Chat with Welcome Message
   useEffect(() => {
     if (isOpen && messages.length === 0) {
-      setMessages([
-        {
-          text: "Hi! I'm the Civix Guide. I can help you understand how this website works. What would you like to know?",
-          isBot: true
-        }
-      ]);
-      setSuggestedQuestions(faqData.map(item => item.question).slice(0, 4));
+      setMessages([{ text: "Hi! I'm CiviBot. How can I help you today?", isBot: true }]);
+      setSuggestedQuestions(faqData.map(item => item.question).slice(0, 3));
     }
   }, [isOpen]);
 
-  // 3. Auto-scroll
+  // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const toggleChat = () => setIsOpen(!isOpen);
-
+  // Handle Sending Messages
   const handleSendMessage = () => {
-    if (inputValue.trim() === '') return;
-
-    // User Message
+    if (!inputValue.trim()) return;
+    
+    // 1. Add User Message
     const newMessages = [...messages, { text: inputValue, isBot: false }];
     setMessages(newMessages);
     setInputValue('');
-    setSuggestedQuestions([]); // Clear suggestions on manual type
+    setSuggestedQuestions([]);
 
-    // Bot Response Logic
+    // 2. Simulate Bot Response
     setTimeout(() => {
-      const matchedFaq = faqData.find(item => 
-        item.question.toLowerCase().includes(inputValue.toLowerCase()) || 
-        inputValue.toLowerCase().includes(item.question.toLowerCase())
+      const matched = faqData.find(q => 
+        q.question.toLowerCase().includes(inputValue.toLowerCase()) || 
+        inputValue.toLowerCase().includes(q.question.toLowerCase())
       );
 
-      if (matchedFaq) {
-        setMessages(prev => [...prev, { text: matchedFaq.answer, isBot: true }]);
+      if (matched) {
+        setMessages(prev => [...prev, { text: matched.answer, isBot: true }]);
       } else {
-        setMessages(prev => [...prev, { 
-          text: "I'm not sure I understand specific details yet. Try asking one of these common questions:", 
-          isBot: true 
-        }]);
+        setMessages(prev => [...prev, { text: "I'm still learning! Try picking a topic below:", isBot: true }]);
         setSuggestedQuestions(faqData.map(item => item.question).slice(0, 3));
       }
     }, 800);
   };
 
-  const handleSuggestedQuestion = (question) => {
-    // Add user selection immediately
-    const newMessages = [...messages, { text: question, isBot: false }];
-    setMessages(newMessages);
-    
-    // Find answer
+  // Handle Clicking Suggested Chips
+  const handleSuggestedClick = (question) => {
+    setMessages(prev => [...prev, { text: question, isBot: false }]);
     setTimeout(() => {
-      const matchedFaq = faqData.find(item => item.question === question);
-      if (matchedFaq) {
-        setMessages(prev => [...prev, { text: matchedFaq.answer, isBot: true }]);
-      }
+      const matched = faqData.find(item => item.question === question);
+      if (matched) setMessages(prev => [...prev, { text: matched.answer, isBot: true }]);
     }, 600);
   };
 
-  const handleKeyPress = (e) => {
-    if (e.key === 'Enter') handleSendMessage();
-  };
-
   return (
-    <div className="fixed bottom-6 right-6 z-50 font-sans">
-      {isOpen ? (
-        <div className="w-80 h-[500px] bg-white rounded-xl shadow-2xl flex flex-col border border-gray-200 overflow-hidden animate-fade-in-up">
-          {/* Header */}
-          <div className="bg-blue-600 text-white p-4 flex justify-between items-center shadow-md">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-              <h3 className="font-bold tracking-wide">Civix Assistant</h3>
-            </div>
-            <button onClick={toggleChat} className="text-white hover:bg-blue-700 p-1 rounded transition">
-              {/* Close Icon SVG */}
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-            </button>
-          </div>
+    <Box sx={{ position: 'fixed', bottom: 30, right: 30, zIndex: 9999 }}>
+      
+      {/* 1. CHAT WINDOW CONTAINER */}
+      <Fade in={isOpen}>
+        <Paper elevation={6} sx={{ 
+          width: 320, height: 450, display: isOpen ? 'flex' : 'none', flexDirection: 'column', 
+          borderRadius: 4, overflow: 'hidden', mb: 2 
+        }}>
           
-          {/* Messages Area */}
-          <div className="flex-1 p-4 overflow-y-auto bg-gray-50">
-            {messages.map((message, index) => (
-              <div 
-                key={index} 
-                className={`mb-4 flex ${message.isBot ? 'justify-start' : 'justify-end'}`}
-              >
-                <div 
-                  className={`max-w-[85%] p-3 rounded-2xl text-sm shadow-sm ${
-                    message.isBot ? 
-                    'bg-white text-gray-800 rounded-tl-none border border-gray-100' : 
-                    'bg-blue-600 text-white rounded-br-none'
-                  }`}
-                >
-                  {message.text}
-                </div>
-              </div>
+          {/* A. HEADER (With Custom Image) */}
+          <Box sx={{ bgcolor: '#1976d2', color: 'white', p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Avatar src={botImage} sx={{ width: 32, height: 32, bgcolor: 'white' }} />
+              <Typography variant="subtitle1" fontWeight="bold">Civix Support</Typography>
+            </Box>
+            <IconButton size="small" onClick={() => setIsOpen(false)} sx={{ color: 'white' }}>
+              <CloseIcon />
+            </IconButton>
+          </Box>
+
+          {/* B. MESSAGES AREA */}
+          <Box sx={{ flex: 1, p: 2, overflowY: 'auto', bgcolor: '#f5f5f5' }}>
+            {messages.map((msg, index) => (
+              <Box key={index} sx={{ display: 'flex', justifyContent: msg.isBot ? 'flex-start' : 'flex-end', mb: 1.5 }}>
+                {/* Show Avatar for Bot Messages */}
+                {msg.isBot && (
+                   <Avatar src={botImage} sx={{ width: 28, height: 28, mr: 1, mt: 0.5 }} />
+                )}
+                <Paper sx={{ 
+                  p: 1.5, maxWidth: '75%', 
+                  bgcolor: msg.isBot ? 'white' : '#1976d2', 
+                  color: msg.isBot ? 'text.primary' : 'white',
+                  borderRadius: msg.isBot ? '16px 16px 16px 4px' : '16px 16px 4px 16px',
+                  boxShadow: 1
+                }}>
+                  <Typography variant="body2">{msg.text}</Typography>
+                </Paper>
+              </Box>
             ))}
             
-            {/* Suggestions Chips */}
+            {/* Suggested Question Chips */}
             {suggestedQuestions.length > 0 && (
-              <div className="flex flex-col gap-2 mt-2">
-                <p className="text-xs text-gray-400 ml-1">Suggested topics:</p>
-                {suggestedQuestions.map((question, index) => (
-                  <button
-                    key={index}
-                    onClick={() => handleSuggestedQuestion(question)}
-                    className="text-left text-xs bg-white border border-blue-100 text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition duration-200 shadow-sm"
-                  >
-                    {question}
-                  </button>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 2 }}>
+                {suggestedQuestions.map((q, idx) => (
+                  <Chip 
+                    key={idx} label={q} onClick={() => handleSuggestedClick(q)} 
+                    color="primary" variant="outlined" size="small" 
+                    sx={{ bgcolor: 'white', borderColor: '#1976d2', color: '#1976d2' }}
+                  />
                 ))}
-              </div>
+              </Box>
             )}
             <div ref={messagesEndRef} />
-          </div>
-          
-          {/* Input Area */}
-          <div className="p-3 bg-white border-t border-gray-100">
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyPress={handleKeyPress}
-                placeholder="Type a question..."
-                className="flex-1 p-2 text-sm border border-gray-200 rounded-full focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 pl-4"
-              />
-              <button
-                onClick={handleSendMessage}
-                className="bg-blue-600 text-white p-2 rounded-full hover:bg-blue-700 transition shadow-sm"
-              >
-                {/* Send Icon SVG */}
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : (
-        /* Floating Button */
-        <button
-          onClick={toggleChat}
-          className="bg-blue-600 text-white p-4 rounded-full shadow-lg hover:bg-blue-700 hover:shadow-xl transition duration-300 transform hover:scale-105 flex items-center justify-center group"
+          </Box>
+
+          {/* C. INPUT AREA */}
+          <Box sx={{ p: 1.5, bgcolor: 'white', borderTop: '1px solid #eee', display: 'flex' }}>
+            <InputBase 
+              fullWidth placeholder="Type a message..." 
+              value={inputValue} onChange={(e) => setInputValue(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+              sx={{ ml: 1, flex: 1 }}
+            />
+            <IconButton color="primary" onClick={handleSendMessage}>
+              <SendIcon />
+            </IconButton>
+          </Box>
+        </Paper>
+      </Fade>
+
+      {/* 2. FLOATING TOGGLE BUTTON (With Custom Image) */}
+      <Zoom in={!isOpen}>
+        <Fab 
+          aria-label="chat" 
+          onClick={() => setIsOpen(true)}
+          sx={{ 
+            width: 65, height: 65, 
+            display: isOpen ? 'none' : 'flex', 
+            bgcolor: 'white', 
+            '&:hover': { bgcolor: '#f5f5f5' } // Slight grey on hover
+          }}
         >
-          {/* Message Icon SVG */}
-          <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="group-hover:animate-bounce"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-        </button>
-      )}
-    </div>
+          {/* The Custom Image Icon */}
+          <Avatar 
+            src={botImage} 
+            sx={{ width: 45, height: 45 }} 
+            variant="square" // Optional: remove this if you want it circular
+          />
+        </Fab>
+      </Zoom>
+    </Box>
   );
 };
 
