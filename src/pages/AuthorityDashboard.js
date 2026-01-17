@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { db, auth } from '../firebase';
 import { signOut } from 'firebase/auth';
-import { collection, onSnapshot, orderBy, query, doc, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, orderBy, query, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import { 
   Box, Typography, Button, Grid, Paper, Table, TableBody, TableCell, 
@@ -61,7 +61,7 @@ function AuthorityDashboard() {
       await updateDoc(issueRef, {
         status: "Resolved",
         resolutionProof: proofUrl || "http://via.placeholder.com/150",
-        resolvedAt: new Date().toISOString()
+        resolvedAt: serverTimestamp() // Use Firestore serverTimestamp instead
       });
       
       console.log("Issue resolved successfully!");
