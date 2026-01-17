@@ -5,6 +5,9 @@ import {
 import { Link } from 'react-router-dom';
 import { styled, keyframes } from '@mui/material/styles';
 
+// --- IMPORTS FOR CHATBOT ---
+import ChatBot from '../components/ChatBot';
+
 // Icons
 import AutoGraphIcon from '@mui/icons-material/AutoGraph';       
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';   
@@ -82,20 +85,6 @@ const StatBox = styled(Box)(({ theme }) => ({
     WebkitTextFillColor: 'transparent',
   },
   '& p': { color: '#555', fontSize: '0.85rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '1.2px' }
-}));
-
-const StepConnector = styled(Box)(({ theme }) => ({
-  position: 'absolute',
-  top: '40px',
-  left: '50%',
-  width: '100%',
-  height: '2px',
-  borderTop: '2px dashed #e0e0e0',
-  zIndex: 0,
-  display: 'none',
-  [theme.breakpoints.up('md')]: {
-    display: 'block',
-  },
 }));
 
 function LandingPage() {
@@ -295,6 +284,10 @@ function LandingPage() {
           </Button>
         </Container>
       </Box>
+
+      {/* --- FLOATING CHATBOT WIDGET --- */}
+      <ChatBot />
+
     </Box>
   );
 }
