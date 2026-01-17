@@ -1,35 +1,41 @@
-import React, { useEffect, useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { auth } from './firebase';
-import { onAuthStateChanged } from 'firebase/auth';
-import { CircularProgress, Box } from '@mui/material';
+import React, { useEffect, useState } from "react";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth } from "./firebase";
+import { CircularProgress, Box } from "@mui/material";
 
-// Import all your pages/components
-import Header from './components/Header';
-import LandingPage from './pages/LandingPage';
-import CitizenReport from './pages/CitizenReport';
-import AuthorityDashboard from './pages/AuthorityDashboard';
-import Login from './pages/Login';
-import Signup from './pages/Signup';
+// Common Components
+import Header from "./components/Header";
+
+// Public Pages
+import LandingPage from "./pages/LandingPage";
+import CitizenReport from "./pages/CitizenReport";
+import Login from "./pages/Login";
+import Signup from "./pages/Signup";
+
+// Admin Pages
+import AuthorityDashboard from "./pages/AuthorityDashboard";
+import Issues from "./pages/Issues";
+import MapView from "./pages/MapView";
+import Analytics from "./pages/Analytics";
 
 function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // This effect runs once when the app loads.
-  // It checks Firebase to see if the user is already logged in.
+  // Check authentication state once app loads
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser); // Set the user if found
-      setLoading(false);    // Stop loading once we know the status
+      setUser(currentUser);
+      setLoading(false);
     });
     return () => unsubscribe();
   }, []);
 
-  // Show a loading spinner while checking auth status (prevents flickering)
+  // Prevent UI flicker while auth is loading
   if (loading) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+      <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh" }}>
         <CircularProgress />
       </Box>
     );
@@ -37,27 +43,36 @@ function App() {
 
   return (
     <Router>
-      {/* The Header is placed here so it appears on EVERY page */}
+      {/* Header visible on all pages */}
       <Header />
 
       <Routes>
-        {/* Public Routes - Anyone can see these */}
+        {/* ===== PUBLIC ROUTES ===== */}
         <Route path="/" element={<LandingPage />} />
         <Route path="/report" element={<CitizenReport />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/signup" element={<Signup />} />
+        <Route path="/login" element={!user ? <Login /> : <Navigate to="/admin" />} />
+        <Route path="/signup" element={!user ? <Signup /> : <Navigate to="/admin" />} />
 
-        {/* Protected Route - Only logged-in users can see the Dashboard */}
-        <Route 
-          path="/admin" 
-          element={
-            user ? (
-              <AuthorityDashboard /> 
-            ) : (
-              <Navigate to="/login" replace />
-            )
-          } 
+        {/* ===== PROTECTED ADMIN ROUTES ===== */}
+        <Route
+          path="/admin"
+          element={user ? <AuthorityDashboard /> : <Navigate to="/login" replace />}
         />
+        <Route
+          path="/admin/issues"
+          element={user ? <Issues /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/admin/map"
+          element={user ? <MapView /> : <Navigate to="/login" replace />}
+        />
+        <Route
+          path="/admin/analytics"
+          element={user ? <Analytics /> : <Navigate to="/login" replace />}
+        />
+
+        {/* ===== FALLBACK ===== */}
+        <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </Router>
   );
