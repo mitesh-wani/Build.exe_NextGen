@@ -24,26 +24,21 @@ import { db, storage, auth } from './firebase';
 
 /**
  * Safely convert Firestore timestamp to JavaScript Date
- * Handles: Timestamp objects, Date objects, strings, nulls, undefined
  */
 const convertTimestamp = (timestamp) => {
   if (!timestamp) return null;
   
-  // If it's already a Date object, return it
   if (timestamp instanceof Date) return timestamp;
   
-  // If it's a Firestore Timestamp, convert it
   if (timestamp?.toDate && typeof timestamp.toDate === 'function') {
     return timestamp.toDate();
   }
   
-  // If it's a string or number, try to create a Date
   if (typeof timestamp === 'string' || typeof timestamp === 'number') {
     const date = new Date(timestamp);
     return isNaN(date.getTime()) ? null : date;
   }
   
-  // If we can't convert it, return null
   return null;
 };
 
@@ -64,14 +59,14 @@ const transformIssueData = (doc) => {
     priority: data.priority || 'medium',
     status: data.status || 'pending',
     
-    // Handle location - support both old and new formats
+    // Handle location - support both formats
     location: data.location ? {
       lat: data.location.lat || data.latitude || 0,
       lng: data.location.lng || data.longitude || 0,
       address: data.location.address || data.address || 'Location shared'
     } : null,
     
-    // Handle photos - support both formats
+    // Handle photos
     photos: data.photos || (data.imageUrl ? [data.imageUrl] : []),
     
     // Optional fields
@@ -81,7 +76,7 @@ const transformIssueData = (doc) => {
     resolutionProof: data.resolutionProof || [],
     resolutionNote: data.resolutionNote || null,
     
-    // ✅ CRITICAL: Convert all timestamps safely
+    // Convert timestamps
     createdAt: convertTimestamp(data.createdAt),
     updatedAt: convertTimestamp(data.updatedAt),
     resolvedAt: convertTimestamp(data.resolvedAt),
@@ -128,6 +123,7 @@ export const createIssue = async (issueData) => {
     // Upload photos if provided
     let photoUrls = [];
     if (issueData.photos && issueData.photos.length > 0) {
+      console.log('📤 Uploading photos...');
       for (const photo of issueData.photos) {
         if (photo.uri) {
           const url = await uploadPhoto(photo.uri);
@@ -141,7 +137,7 @@ export const createIssue = async (issueData) => {
     // Prepare issue document
     const issueDoc = {
       userId: userId,
-      userName: issueData.userName || 'Anonymous',
+      userName: issueData.userName || auth.currentUser?.displayName || 'Anonymous',
       userPhone: issueData.userPhone || '',
       title: issueData.title || issueData.category || 'Untitled',
       description: issueData.description || '',
@@ -155,10 +151,10 @@ export const createIssue = async (issueData) => {
       // Photos
       photos: photoUrls,
       
-      // Optional AI analysis
+      // AI analysis (if provided)
       aiAnalysis: issueData.aiAnalysis || null,
       
-      // Timestamps - use serverTimestamp for consistency
+      // Timestamps
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     };
@@ -180,7 +176,6 @@ export const createIssue = async (issueData) => {
       console.log('✅ Notification created');
     } catch (notifError) {
       console.error('⚠️ Notification creation failed:', notifError);
-      // Don't fail the whole operation if notification fails
     }
 
     return {
@@ -238,7 +233,7 @@ export const getUserIssues = async (userId) => {
     const querySnapshot = await getDocs(q);
     const issues = querySnapshot.docs.map(doc => transformIssueData(doc));
 
-    console.log(`✅ Fetched ${issues.length} issues for user ${userId}`);
+    console.log(`✅ Fetched ${issues.length} issues for user`);
     return {
       success: true,
       data: issues,
@@ -277,6 +272,48 @@ export const getAllIssues = async () => {
       success: false,
       error: error.message,
       data: [],
+    };
+  }
+};
+
+/**
+ * Update issue status (for authorities)
+ */
+export const updateIssueStatus = async (issueId, status, resolutionData = {}) => {
+  try {
+    const updateData = {
+      status: status,
+      updatedAt: serverTimestamp(),
+    };
+
+    // If resolved, add resolution data
+    if (status === 'resolved') {
+      updateData.resolvedAt = serverTimestamp();
+      if (resolutionData.note) {
+        updateData.resolutionNote = resolutionData.note;
+      }
+      if (resolutionData.photos) {
+        updateData.resolutionProof = resolutionData.photos;
+      }
+    }
+
+    // If assigned, add assignment data
+    if (status === 'assigned' && resolutionData.assignedTo) {
+      updateData.assignedTo = resolutionData.assignedTo;
+      updateData.assignedOfficerName = resolutionData.assignedOfficerName || null;
+      updateData.assignedAt = serverTimestamp();
+    }
+
+    const docRef = doc(db, 'issues', issueId);
+    await updateDoc(docRef, updateData);
+
+    console.log('✅ Issue status updated:', status);
+    return { success: true };
+  } catch (error) {
+    console.error('❌ Error updating issue status:', error);
+    return {
+      success: false,
+      error: error.message,
     };
   }
 };
@@ -339,7 +376,7 @@ export const subscribeToUserIssues = (userId, callback) => {
 };
 
 /**
- * Subscribe to all issues
+ * Subscribe to all issues (for map/admin)
  */
 export const subscribeToAllIssues = (callback) => {
   try {
@@ -405,6 +442,28 @@ export const getUserProfile = async (userId) => {
   }
 };
 
+/**
+ * Update user profile
+ */
+export const updateUserProfile = async (userId, updates) => {
+  try {
+    const docRef = doc(db, 'users', userId);
+    await updateDoc(docRef, {
+      ...updates,
+      updatedAt: serverTimestamp(),
+    });
+
+    console.log('✅ User profile updated');
+    return { success: true };
+  } catch (error) {
+    console.error('❌ Error updating user profile:', error);
+    return {
+      success: false,
+      error: error.message,
+    };
+  }
+};
+
 // ============================================
 // 🔔 NOTIFICATION OPERATIONS
 // ============================================
@@ -463,15 +522,58 @@ export const markNotificationAsRead = async (notificationId) => {
   }
 };
 
+/**
+ * Subscribe to user notifications
+ */
+export const subscribeToUserNotifications = (userId, callback) => {
+  try {
+    const q = query(
+      collection(db, 'notifications'),
+      where('userId', '==', userId),
+      orderBy('createdAt', 'desc'),
+      limit(50)
+    );
+
+    const unsubscribe = onSnapshot(q,
+      (snapshot) => {
+        const notifications = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          createdAt: convertTimestamp(doc.data().createdAt),
+        }));
+        callback(notifications);
+      },
+      (error) => {
+        console.error('❌ Error in notifications subscription:', error);
+      }
+    );
+
+    return unsubscribe;
+  } catch (error) {
+    console.error('❌ Error setting up notifications subscription:', error);
+    return null;
+  }
+};
+
 export default {
+  // Issue operations
   createIssue,
   getIssueById,
   getUserIssues,
   getAllIssues,
+  updateIssueStatus,
+  
+  // Real-time subscriptions
   subscribeToIssue,
   subscribeToUserIssues,
   subscribeToAllIssues,
+  
+  // User operations
   getUserProfile,
+  updateUserProfile,
+  
+  // Notification operations
   getUserNotifications,
   markNotificationAsRead,
+  subscribeToUserNotifications,
 };
