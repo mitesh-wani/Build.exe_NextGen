@@ -18,9 +18,11 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { auth, db, storage } from '../services/firebase';
+import { auth } from '../services/firebase'; // ✅ Updated import
+import { 
+  createIssue, 
+  getUserProfile 
+} from '../services/firebaseServices'; // ✅ Import services
 
 // Theme imports
 import {
@@ -44,12 +46,30 @@ export default function ReportIssueScreen() {
   const [address, setAddress] = useState('Fetching location...');
   const [loading, setLoading] = useState(false);
   const [locationLoading, setLocationLoading] = useState(true);
+  const [userProfile, setUserProfile] = useState(null); // ✅ Store user profile
 
   useEffect(() => {
     (async () => {
       await requestPermissionsAndGetLocation();
+      await fetchUserProfile(); // ✅ Get user profile on mount
     })();
   }, []);
+
+  // ✅ Fetch user profile for userName and userPhone
+  const fetchUserProfile = async () => {
+    try {
+      const userId = auth.currentUser?.uid;
+      if (!userId) return;
+
+      const result = await getUserProfile(userId);
+      if (result.success) {
+        setUserProfile(result.data);
+        console.log('✅ User profile loaded:', result.data.displayName);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching user profile:', error);
+    }
+  };
 
   const requestPermissionsAndGetLocation = async () => {
     try {
@@ -136,16 +156,8 @@ export default function ReportIssueScreen() {
     ]);
   };
 
-  const uploadImageAsync = async (uri) => {
-    const response = await fetch(uri);
-    const blob = await response.blob();
-    const filename = `issues/${Date.now()}_${auth.currentUser?.uid || 'anon'}.jpg`;
-    const storageRef = ref(storage, filename);
-    await uploadBytes(storageRef, blob);
-    return getDownloadURL(storageRef);
-  };
-
   const handleSubmit = async () => {
+    // Validation
     if (!selectedCategory) {
       Alert.alert('Required', 'Please select a category');
       return;
@@ -163,57 +175,73 @@ export default function ReportIssueScreen() {
       return;
     }
 
+    const userId = auth.currentUser?.uid;
+    if (!userId) {
+      Alert.alert('Authentication Required', 'Please log in to report an issue');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      const imageUrl = await uploadImageAsync(image);
-
       const categoryObj = ISSUE_CATEGORIES.find(c => c.name === selectedCategory) || ISSUE_CATEGORIES[7];
 
+      // ✅ Prepare issue data matching service structure
       const issueData = {
-        userId: auth.currentUser?.uid || null,
-        category: selectedCategory,
+        userId: userId,
+        userName: userProfile?.displayName || 'Anonymous User',
+        userPhone: userProfile?.phone || '',
         title: title.trim() || categoryObj.name,
         description: description.trim(),
-        imageUrl,
-        location: {
-          latitude: location.latitude,
-          longitude: location.longitude,
-        },
-        address,
-        status: ISSUE_STATUS.PENDING.value,
+        category: selectedCategory,
         priority: selectedPriority,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+        location: {
+          lat: location.latitude,
+          lng: location.longitude,
+          address: address,
+        },
+        // ✅ Photos array with URI - service will handle upload
+        photos: [{ uri: image }],
+        aiAnalysis: null, // Optional: can add AI analysis later
       };
 
-      await addDoc(collection(db, 'issues'), issueData);
+      console.log('📤 Submitting issue:', issueData.title);
 
-      Alert.alert(
-        'Report Submitted! ✅',
-        'Thank you — your report has been sent to the authorities.',
-        [
-          {
-            text: 'View My Reports',
-            onPress: () => navigation.navigate('MyIssues'),
-          },
-          {
-            text: 'Report Another',
-            onPress: () => {
-              // Reset form
-              setSelectedCategory(null);
-              setSelectedPriority('medium');
-              setTitle('');
-              setDescription('');
-              setImage(null);
-              requestPermissionsAndGetLocation();
+      // ✅ Use service function - it handles photo upload automatically
+      const result = await createIssue(issueData);
+
+      if (result.success) {
+        console.log('✅ Issue created:', result.issueId);
+        
+        Alert.alert(
+          'Report Submitted! ✅',
+          'Thank you — your report has been sent to the authorities.',
+          [
+            {
+              text: 'View My Reports',
+              onPress: () => navigation.navigate('MyIssues'),
             },
-          },
-          { text: 'Done', style: 'cancel' },
-        ]
-      );
+            {
+              text: 'Report Another',
+              onPress: () => {
+                // Reset form
+                setSelectedCategory(null);
+                setSelectedPriority('medium');
+                setTitle('');
+                setDescription('');
+                setImage(null);
+                requestPermissionsAndGetLocation();
+              },
+            },
+            { text: 'Done', style: 'cancel', onPress: () => navigation.goBack() },
+          ]
+        );
+      } else {
+        console.error('❌ Issue creation failed:', result.error);
+        Alert.alert('Submission Failed', result.error || 'Something went wrong. Please try again.');
+      }
     } catch (err) {
-      console.error('Submit error:', err);
+      console.error('❌ Submit error:', err);
       Alert.alert('Submission Failed', 'Something went wrong. Please try again.');
     } finally {
       setLoading(false);
@@ -418,7 +446,12 @@ export default function ReportIssueScreen() {
             activeOpacity={0.8}
           >
             {loading ? (
-              <ActivityIndicator color={COLORS.white} size="small" />
+              <>
+                <ActivityIndicator color={COLORS.white} size="small" />
+                <Text style={[styles.submitText, { marginLeft: SPACING.sm }]}>
+                  Uploading...
+                </Text>
+              </>
             ) : (
               <>
                 <Ionicons name="send" size={20} color={COLORS.white} />

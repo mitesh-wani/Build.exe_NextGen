@@ -9,47 +9,88 @@ import {
   StatusBar,
   RefreshControl,
   Image,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { collection, query, orderBy, getDocs, limit } from 'firebase/firestore';
-import { db } from '../services/firebase';
+import { auth } from '../services/firebase'; // ✅ Updated import
+import { 
+  getAllIssues, 
+  subscribeToAllIssues, // ✅ Real-time listener
+  getUserNotifications 
+} from '../services/firebaseServices'; // ✅ Import services
 import { COLORS, SIZES, SPACING, BORDER_RADIUS, ISSUE_STATUS } from '../constants/theme';
 
 export default function HomeScreen({ navigation }) {
   const [issues, setIssues] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [unsubscribe, setUnsubscribe] = useState(null); // ✅ Store unsubscribe function
 
   useEffect(() => {
     fetchIssues();
+    fetchNotificationCount();
+    
+    // ✅ Set up real-time listener for issues
+    const unsubscribeIssues = subscribeToAllIssues((updatedIssues) => {
+      console.log('✅ Real-time update:', updatedIssues.length, 'issues');
+      setIssues(updatedIssues);
+      setLoading(false);
+    });
+
+    setUnsubscribe(() => unsubscribeIssues);
+
+    // ✅ Cleanup listener on unmount
+    return () => {
+      if (unsubscribeIssues) {
+        unsubscribeIssues();
+      }
+    };
   }, []);
 
   const fetchIssues = async (isRefresh = false) => {
     try {
       if (isRefresh) setRefreshing(true);
       
-      const q = query(
-        collection(db, 'issues'), 
-        orderBy('createdAt', 'desc'),
-        limit(50)
-      );
-      const querySnapshot = await getDocs(q);
-      const issuesList = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setIssues(issuesList);
+      // ✅ Use service function instead of direct Firestore query
+      const result = await getAllIssues();
+      
+      if (result.success) {
+        console.log(`✅ Fetched ${result.data.length} issues`);
+        setIssues(result.data);
+      } else {
+        console.error('❌ Error fetching issues:', result.error);
+        Alert.alert('Error', 'Failed to load issues');
+      }
     } catch (error) {
-      console.error('Error fetching issues:', error);
+      console.error('❌ Unexpected error:', error);
+      Alert.alert('Error', 'Something went wrong');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
+  // ✅ Fetch notification count
+  const fetchNotificationCount = async () => {
+    try {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      const result = await getUserNotifications(user.uid);
+      if (result.success) {
+        const unread = result.data.filter(n => !n.read).length;
+        setUnreadCount(unread);
+      }
+    } catch (error) {
+      console.error('❌ Error fetching notifications:', error);
+    }
+  };
+
   const onRefresh = () => {
     fetchIssues(true);
+    fetchNotificationCount();
   };
 
   const getStatusInfo = (status) => {
@@ -61,6 +102,7 @@ export default function HomeScreen({ navigation }) {
       low: COLORS.success,
       medium: COLORS.warning,
       high: COLORS.danger,
+      critical: COLORS.danger,
     };
     return colors[priority] || colors.medium;
   };
@@ -68,8 +110,11 @@ export default function HomeScreen({ navigation }) {
   const formatDate = (timestamp) => {
     if (!timestamp) return 'Recent';
     
-    // Handle Firestore Timestamp
-    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    // ✅ Handle both JS Date and Firestore Timestamp
+    const date = timestamp instanceof Date ? timestamp : 
+                 timestamp?.toDate ? timestamp.toDate() : 
+                 new Date(timestamp);
+    
     const now = new Date();
     const diff = now - date;
     
@@ -89,6 +134,9 @@ export default function HomeScreen({ navigation }) {
     const statusInfo = getStatusInfo(item.status);
     const priorityColor = getPriorityColor(item.priority);
 
+    // ✅ Handle photos array (service returns 'photos' array, not 'imageUrl')
+    const imageUrl = item.photos && item.photos.length > 0 ? item.photos[0] : null;
+
     return (
       <TouchableOpacity 
         style={styles.card}
@@ -96,9 +144,9 @@ export default function HomeScreen({ navigation }) {
         activeOpacity={0.7}
       >
         {/* Image Preview */}
-        {item.imageUrl && (
+        {imageUrl && (
           <Image 
-            source={{ uri: item.imageUrl }} 
+            source={{ uri: imageUrl }} 
             style={styles.cardImage}
             resizeMode="cover"
           />
@@ -108,7 +156,9 @@ export default function HomeScreen({ navigation }) {
           <View style={styles.cardHeader}>
             <View style={styles.categoryContainer}>
               <View style={[styles.priorityDot, { backgroundColor: priorityColor }]} />
-              <Text style={styles.categoryText}>{item.category || 'General'}</Text>
+              <Text style={styles.categoryText}>
+                {item.category || 'General'}
+              </Text>
             </View>
             <View style={[styles.statusBadge, { backgroundColor: statusInfo.bgColor }]}>
               <Text style={[styles.statusText, { color: statusInfo.color }]}>
@@ -131,7 +181,8 @@ export default function HomeScreen({ navigation }) {
             <View style={styles.locationContainer}>
               <Ionicons name="location" size={16} color={COLORS.primary} />
               <Text style={styles.footerText} numberOfLines={1}>
-                {item.address || 'Location shared'}
+                {/* ✅ Use location.address from service structure */}
+                {item.location?.address || 'Location shared'}
               </Text>
             </View>
             <View style={styles.timeContainer}>
@@ -183,9 +234,14 @@ export default function HomeScreen({ navigation }) {
           onPress={() => navigation.navigate('Notifications')}
         >
           <Ionicons name="notifications-outline" size={24} color={COLORS.white} />
-          <View style={styles.notificationBadge}>
-            <Text style={styles.notificationBadgeText}>3</Text>
-          </View>
+          {/* ✅ Dynamic notification badge */}
+          {unreadCount > 0 && (
+            <View style={styles.notificationBadge}>
+              <Text style={styles.notificationBadgeText}>
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </Text>
+            </View>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -202,7 +258,6 @@ export default function HomeScreen({ navigation }) {
               name="refresh" 
               size={20} 
               color={COLORS.primary} 
-              style={refreshing && styles.rotating}
             />
           </TouchableOpacity>
         </View>
