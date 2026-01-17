@@ -1,708 +1,579 @@
-// ==================== FILE 1: services/firebaseServices.js ====================
-// Complete Firebase Backend Services for UrbanFix
-
+// src/services/firebaseServices.js
 import { 
   collection, 
+  addDoc, 
   doc, 
-  setDoc, 
   getDoc, 
   getDocs, 
-  addDoc,
-  updateDoc,
-  deleteDoc,
+  updateDoc, 
+  deleteDoc, 
   query, 
   where, 
-  orderBy,
+  orderBy, 
   limit,
-  serverTimestamp,
   onSnapshot,
+  serverTimestamp,
   Timestamp
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage, auth } from './firebase';
 
-// ==================== USER SERVICES ====================
+// ============================================
+// 🔧 UTILITY FUNCTIONS
+// ============================================
 
-export const createUserProfile = async (userId, userData) => {
+/**
+ * Safely convert Firestore timestamp to JavaScript Date
+ */
+const convertTimestamp = (timestamp) => {
+  if (!timestamp) return null;
+  
+  if (timestamp instanceof Date) return timestamp;
+  
+  if (timestamp?.toDate && typeof timestamp.toDate === 'function') {
+    return timestamp.toDate();
+  }
+  
+  if (typeof timestamp === 'string' || typeof timestamp === 'number') {
+    const date = new Date(timestamp);
+    return isNaN(date.getTime()) ? null : date;
+  }
+  
+  return null;
+};
+
+/**
+ * Transform Firestore document to app-friendly format
+ */
+const transformIssueData = (doc) => {
+  const data = doc.data();
+  
+  return {
+    id: doc.id,
+    userId: data.userId || null,
+    userName: data.userName || 'Anonymous',
+    userPhone: data.userPhone || '',
+    title: data.title || data.category || 'Untitled',
+    description: data.description || '',
+    category: data.category || 'General',
+    priority: data.priority || 'medium',
+    status: data.status || 'pending',
+    
+    // Handle location - support both formats
+    location: data.location ? {
+      lat: data.location.lat || data.latitude || 0,
+      lng: data.location.lng || data.longitude || 0,
+      address: data.location.address || data.address || 'Location shared'
+    } : null,
+    
+    // Handle photos
+    photos: data.photos || (data.imageUrl ? [data.imageUrl] : []),
+    
+    // Optional fields
+    assignedTo: data.assignedTo || null,
+    assignedOfficerName: data.assignedOfficerName || null,
+    aiAnalysis: data.aiAnalysis || null,
+    resolutionProof: data.resolutionProof || [],
+    resolutionNote: data.resolutionNote || null,
+    
+    // Convert timestamps
+    createdAt: convertTimestamp(data.createdAt),
+    updatedAt: convertTimestamp(data.updatedAt),
+    resolvedAt: convertTimestamp(data.resolvedAt),
+    assignedAt: convertTimestamp(data.assignedAt),
+  };
+};
+
+/**
+ * Upload photo to Firebase Storage
+ */
+const uploadPhoto = async (uri, folder = 'issues') => {
   try {
-    const userRef = doc(db, 'users', userId);
-    await setDoc(userRef, {
-      uid: userId,
-      email: userData.email,
-      displayName: userData.displayName || '',
-      phone: userData.phone || '',
-      role: userData.role || 'citizen', // 'citizen' or 'authority'
-      department: userData.department || null,
-      location: userData.location || null,
-      photoURL: userData.photoURL || null,
+    const response = await fetch(uri);
+    const blob = await response.blob();
+    
+    const filename = `${folder}/${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
+    const storageRef = ref(storage, filename);
+    
+    await uploadBytes(storageRef, blob);
+    const downloadURL = await getDownloadURL(storageRef);
+    
+    console.log('✅ Photo uploaded:', downloadURL);
+    return downloadURL;
+  } catch (error) {
+    console.error('❌ Photo upload error:', error);
+    throw new Error('Failed to upload photo');
+  }
+};
+
+// ============================================
+// 📝 ISSUE CRUD OPERATIONS
+// ============================================
+
+/**
+ * Create a new issue
+ */
+export const createIssue = async (issueData) => {
+  try {
+    const userId = auth.currentUser?.uid;
+    if (!userId) {
+      throw new Error('User not authenticated');
+    }
+
+    // Upload photos if provided
+    let photoUrls = [];
+    if (issueData.photos && issueData.photos.length > 0) {
+      console.log('📤 Uploading photos...');
+      for (const photo of issueData.photos) {
+        if (photo.uri) {
+          const url = await uploadPhoto(photo.uri);
+          photoUrls.push(url);
+        } else if (typeof photo === 'string') {
+          photoUrls.push(photo);
+        }
+      }
+    }
+
+    // Prepare issue document
+    const issueDoc = {
+      userId: userId,
+      userName: issueData.userName || auth.currentUser?.displayName || 'Anonymous',
+      userPhone: issueData.userPhone || '',
+      title: issueData.title || issueData.category || 'Untitled',
+      description: issueData.description || '',
+      category: issueData.category || 'General',
+      priority: issueData.priority || 'medium',
+      status: 'pending',
+      
+      // Location
+      location: issueData.location || null,
+      
+      // Photos
+      photos: photoUrls,
+      
+      // AI analysis (if provided)
+      aiAnalysis: issueData.aiAnalysis || null,
+      
+      // Timestamps
       createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    });
-    console.log('✅ User profile created successfully');
+      updatedAt: serverTimestamp(),
+    };
+
+    const docRef = await addDoc(collection(db, 'issues'), issueDoc);
+    console.log('✅ Issue created with ID:', docRef.id);
+
+    // Create notification for user
+    try {
+      await addDoc(collection(db, 'notifications'), {
+        userId: userId,
+        issueId: docRef.id,
+        type: 'issue_created',
+        title: 'Report Submitted',
+        message: `Your report about "${issueDoc.category}" has been submitted successfully.`,
+        read: false,
+        createdAt: serverTimestamp(),
+      });
+      console.log('✅ Notification created');
+    } catch (notifError) {
+      console.error('⚠️ Notification creation failed:', notifError);
+    }
+
+    return {
+      success: true,
+      issueId: docRef.id,
+    };
+  } catch (error) {
+    console.error('❌ Error creating issue:', error);
+    return {
+      success: false,
+      error: error.message,
+    };
+  }
+};
+
+/**
+ * Get issue by ID
+ */
+export const getIssueById = async (issueId) => {
+  try {
+    const docRef = doc(db, 'issues', issueId);
+    const docSnap = await getDoc(docRef);
+
+    if (!docSnap.exists()) {
+      return {
+        success: false,
+        error: 'Issue not found',
+      };
+    }
+
+    return {
+      success: true,
+      data: transformIssueData(docSnap),
+    };
+  } catch (error) {
+    console.error('❌ Error fetching issue:', error);
+    return {
+      success: false,
+      error: error.message,
+    };
+  }
+};
+
+/**
+ * Get all issues for a specific user
+ */
+export const getUserIssues = async (userId) => {
+  try {
+    const q = query(
+      collection(db, 'issues'),
+      where('userId', '==', userId),
+      orderBy('createdAt', 'desc')
+    );
+
+    const querySnapshot = await getDocs(q);
+    const issues = querySnapshot.docs.map(doc => transformIssueData(doc));
+
+    console.log(`✅ Fetched ${issues.length} issues for user`);
+    return {
+      success: true,
+      data: issues,
+    };
+  } catch (error) {
+    console.error('❌ Error getting user issues:', error);
+    return {
+      success: false,
+      error: error.message,
+      data: [],
+    };
+  }
+};
+
+/**
+ * Get all issues (for admin/map view)
+ */
+export const getAllIssues = async () => {
+  try {
+    const q = query(
+      collection(db, 'issues'),
+      orderBy('createdAt', 'desc')
+    );
+
+    const querySnapshot = await getDocs(q);
+    const issues = querySnapshot.docs.map(doc => transformIssueData(doc));
+
+    console.log(`✅ Fetched ${issues.length} total issues`);
+    return {
+      success: true,
+      data: issues,
+    };
+  } catch (error) {
+    console.error('❌ Error fetching issues:', error);
+    return {
+      success: false,
+      error: error.message,
+      data: [],
+    };
+  }
+};
+
+/**
+ * Update issue status (for authorities)
+ */
+export const updateIssueStatus = async (issueId, status, resolutionData = {}) => {
+  try {
+    const updateData = {
+      status: status,
+      updatedAt: serverTimestamp(),
+    };
+
+    // If resolved, add resolution data
+    if (status === 'resolved') {
+      updateData.resolvedAt = serverTimestamp();
+      if (resolutionData.note) {
+        updateData.resolutionNote = resolutionData.note;
+      }
+      if (resolutionData.photos) {
+        updateData.resolutionProof = resolutionData.photos;
+      }
+    }
+
+    // If assigned, add assignment data
+    if (status === 'assigned' && resolutionData.assignedTo) {
+      updateData.assignedTo = resolutionData.assignedTo;
+      updateData.assignedOfficerName = resolutionData.assignedOfficerName || null;
+      updateData.assignedAt = serverTimestamp();
+    }
+
+    const docRef = doc(db, 'issues', issueId);
+    await updateDoc(docRef, updateData);
+
+    console.log('✅ Issue status updated:', status);
     return { success: true };
   } catch (error) {
-    console.error('❌ Error creating user profile:', error);
-    return { success: false, error: error.message };
+    console.error('❌ Error updating issue status:', error);
+    return {
+      success: false,
+      error: error.message,
+    };
   }
 };
 
+// ============================================
+// 🔄 REAL-TIME LISTENERS
+// ============================================
+
+/**
+ * Subscribe to a specific issue's updates
+ */
+export const subscribeToIssue = (issueId, callback) => {
+  try {
+    const docRef = doc(db, 'issues', issueId);
+    
+    const unsubscribe = onSnapshot(docRef, 
+      (doc) => {
+        if (doc.exists()) {
+          callback(transformIssueData(doc));
+        }
+      },
+      (error) => {
+        console.error('❌ Error in issue subscription:', error);
+      }
+    );
+
+    return unsubscribe;
+  } catch (error) {
+    console.error('❌ Error setting up issue subscription:', error);
+    return null;
+  }
+};
+
+/**
+ * Subscribe to user's issues
+ */
+export const subscribeToUserIssues = (userId, callback) => {
+  try {
+    const q = query(
+      collection(db, 'issues'),
+      where('userId', '==', userId),
+      orderBy('createdAt', 'desc')
+    );
+
+    const unsubscribe = onSnapshot(q,
+      (snapshot) => {
+        const issues = snapshot.docs.map(doc => transformIssueData(doc));
+        callback(issues);
+      },
+      (error) => {
+        console.error('❌ Error in user issues subscription:', error);
+      }
+    );
+
+    return unsubscribe;
+  } catch (error) {
+    console.error('❌ Error setting up user issues subscription:', error);
+    return null;
+  }
+};
+
+/**
+ * Subscribe to all issues (for map/admin)
+ */
+export const subscribeToAllIssues = (callback) => {
+  try {
+    const q = query(
+      collection(db, 'issues'),
+      orderBy('createdAt', 'desc')
+    );
+
+    const unsubscribe = onSnapshot(q,
+      (snapshot) => {
+        const issues = snapshot.docs.map(doc => transformIssueData(doc));
+        callback(issues);
+      },
+      (error) => {
+        console.error('❌ Error in all issues subscription:', error);
+      }
+    );
+
+    return unsubscribe;
+  } catch (error) {
+    console.error('❌ Error setting up all issues subscription:', error);
+    return null;
+  }
+};
+
+// ============================================
+// 👤 USER PROFILE OPERATIONS
+// ============================================
+
+/**
+ * Get user profile
+ */
 export const getUserProfile = async (userId) => {
   try {
-    const userRef = doc(db, 'users', userId);
-    const userSnap = await getDoc(userRef);
-    
-    if (userSnap.exists()) {
-      return { success: true, data: userSnap.data() };
-    } else {
-      return { success: false, error: 'User not found' };
+    const docRef = doc(db, 'users', userId);
+    const docSnap = await getDoc(docRef);
+
+    if (!docSnap.exists()) {
+      return {
+        success: false,
+        error: 'User profile not found',
+      };
     }
+
+    const data = docSnap.data();
+    return {
+      success: true,
+      data: {
+        id: docSnap.id,
+        email: data.email || '',
+        displayName: data.name || data.displayName || 'User',
+        phone: data.phone || '',
+        role: data.role || 'citizen',
+        createdAt: convertTimestamp(data.createdAt),
+      },
+    };
   } catch (error) {
-    console.error('❌ Error getting user profile:', error);
-    return { success: false, error: error.message };
+    console.error('❌ Error fetching user profile:', error);
+    return {
+      success: false,
+      error: error.message,
+    };
   }
 };
 
+/**
+ * Update user profile
+ */
 export const updateUserProfile = async (userId, updates) => {
   try {
-    const userRef = doc(db, 'users', userId);
-    await updateDoc(userRef, {
+    const docRef = doc(db, 'users', userId);
+    await updateDoc(docRef, {
       ...updates,
-      updatedAt: serverTimestamp()
+      updatedAt: serverTimestamp(),
     });
+
     console.log('✅ User profile updated');
     return { success: true };
   } catch (error) {
     console.error('❌ Error updating user profile:', error);
-    return { success: false, error: error.message };
-  }
-};
-
-// ==================== STORAGE SERVICES ====================
-
-export const uploadIssuePhotos = async (photos) => {
-  try {
-    const uploadedUrls = [];
-    
-    for (const photo of photos) {
-      // Handle both URI and base64
-      let blob;
-      if (photo.uri) {
-        const response = await fetch(photo.uri);
-        blob = await response.blob();
-      } else if (photo.base64) {
-        const response = await fetch(`data:image/jpeg;base64,${photo.base64}`);
-        blob = await response.blob();
-      }
-      
-      const filename = `issues/${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
-      const storageRef = ref(storage, filename);
-      
-      await uploadBytes(storageRef, blob);
-      const downloadUrl = await getDownloadURL(storageRef);
-      uploadedUrls.push(downloadUrl);
-      console.log('✅ Photo uploaded:', downloadUrl);
-    }
-    
-    return { success: true, urls: uploadedUrls };
-  } catch (error) {
-    console.error('❌ Error uploading photos:', error);
-    return { success: false, error: error.message };
-  }
-};
-
-export const uploadResolutionPhotos = async (photos) => {
-  try {
-    const uploadedUrls = [];
-    
-    for (const photo of photos) {
-      const response = await fetch(photo.uri);
-      const blob = await response.blob();
-      const filename = `resolutions/${Date.now()}_${Math.random().toString(36).substring(7)}.jpg`;
-      const storageRef = ref(storage, filename);
-      
-      await uploadBytes(storageRef, blob);
-      const downloadUrl = await getDownloadURL(storageRef);
-      uploadedUrls.push(downloadUrl);
-    }
-    
-    return { success: true, urls: uploadedUrls };
-  } catch (error) {
-    console.error('❌ Error uploading resolution photos:', error);
-    return { success: false, error: error.message };
-  }
-};
-
-// ==================== ISSUE SERVICES ====================
-
-export const createIssue = async (issueData) => {
-  try {
-    // First upload photos if they exist
-    let photoUrls = [];
-    if (issueData.photos && issueData.photos.length > 0) {
-      const uploadResult = await uploadIssuePhotos(issueData.photos);
-      if (!uploadResult.success) {
-        throw new Error('Failed to upload photos');
-      }
-      photoUrls = uploadResult.urls;
-    }
-
-    // Create issue document
-    const issuesRef = collection(db, 'issues');
-    const issueDoc = {
-      userId: issueData.userId,
-      userName: issueData.userName,
-      userPhone: issueData.userPhone || '',
-      title: issueData.title,
-      description: issueData.description,
-      category: issueData.category || 'uncategorized',
-      priority: issueData.priority || 'medium',
-      status: 'pending',
-      location: {
-        lat: issueData.location.lat,
-        lng: issueData.location.lng,
-        address: issueData.location.address || ''
-      },
-      photos: photoUrls,
-      aiAnalysis: issueData.aiAnalysis || null,
-      assignedTo: null,
-      assignedOfficerName: null,
-      departmentId: null,
-      resolutionProof: [],
-      resolutionNote: '',
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      resolvedAt: null,
-      isDuplicate: false,
-      duplicateOf: null
+    return {
+      success: false,
+      error: error.message,
     };
-
-    const docRef = await addDoc(issuesRef, issueDoc);
-    console.log('✅ Issue created with ID:', docRef.id);
-    
-    // Create notification for the user
-    await createNotification({
-      userId: issueData.userId,
-      issueId: docRef.id,
-      title: 'Issue Reported Successfully',
-      body: `Your issue "${issueData.title}" has been submitted and is pending review.`,
-      type: 'issue_created'
-    });
-    
-    return { success: true, issueId: docRef.id };
-  } catch (error) {
-    console.error('❌ Error creating issue:', error);
-    return { success: false, error: error.message };
   }
 };
 
-export const getUserIssues = async (userId) => {
-  try {
-    const issuesRef = collection(db, 'issues');
-    const q = query(
-      issuesRef, 
-      where('userId', '==', userId),
-      orderBy('createdAt', 'desc')
-    );
-    
-    const querySnapshot = await getDocs(q);
-    const issues = [];
-    
-    querySnapshot.forEach((doc) => {
-      const data = doc.data();
-      issues.push({ 
-        id: doc.id, 
-        ...data,
-        // Convert Firestore Timestamps to JS Dates for easier handling
-        createdAt: data.createdAt?.toDate(),
-        updatedAt: data.updatedAt?.toDate(),
-        resolvedAt: data.resolvedAt?.toDate()
-      });
-    });
-    
-    console.log(`✅ Found ${issues.length} issues for user`);
-    return { success: true, data: issues };
-  } catch (error) {
-    console.error('❌ Error getting user issues:', error);
-    return { success: false, error: error.message };
-  }
-};
+// ============================================
+// 🔔 NOTIFICATION OPERATIONS
+// ============================================
 
-export const getAllIssues = async (filters = {}) => {
-  try {
-    const issuesRef = collection(db, 'issues');
-    let constraints = [orderBy('createdAt', 'desc')];
-    
-    // Apply filters
-    if (filters.status) {
-      constraints.unshift(where('status', '==', filters.status));
-    }
-    if (filters.category) {
-      constraints.unshift(where('category', '==', filters.category));
-    }
-    if (filters.priority) {
-      constraints.unshift(where('priority', '==', filters.priority));
-    }
-    if (filters.departmentId) {
-      constraints.unshift(where('departmentId', '==', filters.departmentId));
-    }
-    if (filters.assignedTo) {
-      constraints.unshift(where('assignedTo', '==', filters.assignedTo));
-    }
-    
-    const q = query(issuesRef, ...constraints);
-    const querySnapshot = await getDocs(q);
-    const issues = [];
-    
-    querySnapshot.forEach((doc) => {
-      const data = doc.data();
-      issues.push({ 
-        id: doc.id, 
-        ...data,
-        createdAt: data.createdAt?.toDate(),
-        updatedAt: data.updatedAt?.toDate(),
-        resolvedAt: data.resolvedAt?.toDate()
-      });
-    });
-    
-    console.log(`✅ Found ${issues.length} issues`);
-    return { success: true, data: issues };
-  } catch (error) {
-    console.error('❌ Error getting issues:', error);
-    return { success: false, error: error.message };
-  }
-};
-
-export const getIssueById = async (issueId) => {
-  try {
-    const issueRef = doc(db, 'issues', issueId);
-    const issueSnap = await getDoc(issueRef);
-    
-    if (issueSnap.exists()) {
-      const data = issueSnap.data();
-      return { 
-        success: true, 
-        data: { 
-          id: issueSnap.id, 
-          ...data,
-          createdAt: data.createdAt?.toDate(),
-          updatedAt: data.updatedAt?.toDate(),
-          resolvedAt: data.resolvedAt?.toDate()
-        } 
-      };
-    } else {
-      return { success: false, error: 'Issue not found' };
-    }
-  } catch (error) {
-    console.error('❌ Error getting issue:', error);
-    return { success: false, error: error.message };
-  }
-};
-
-export const updateIssueStatus = async (issueId, status, updates = {}) => {
-  try {
-    const issueRef = doc(db, 'issues', issueId);
-    const updateData = {
-      status,
-      ...updates,
-      updatedAt: serverTimestamp()
-    };
-    
-    if (status === 'resolved') {
-      updateData.resolvedAt = serverTimestamp();
-    }
-    
-    await updateDoc(issueRef, updateData);
-    console.log(`✅ Issue ${issueId} status updated to ${status}`);
-    
-    // Get issue data for notification
-    const issueSnap = await getDoc(issueRef);
-    const issueData = issueSnap.data();
-    
-    // Notify user about status change
-    await createNotification({
-      userId: issueData.userId,
-      issueId: issueId,
-      title: `Issue Status Updated`,
-      body: `Your issue "${issueData.title}" is now ${status}`,
-      type: 'status_update'
-    });
-    
-    return { success: true };
-  } catch (error) {
-    console.error('❌ Error updating issue status:', error);
-    return { success: false, error: error.message };
-  }
-};
-
-export const assignIssue = async (issueId, officerId, officerName, departmentId) => {
-  try {
-    const issueRef = doc(db, 'issues', issueId);
-    await updateDoc(issueRef, {
-      assignedTo: officerId,
-      assignedOfficerName: officerName,
-      departmentId: departmentId,
-      status: 'assigned',
-      updatedAt: serverTimestamp()
-    });
-    
-    console.log(`✅ Issue ${issueId} assigned to ${officerName}`);
-    
-    // Get issue data
-    const issueSnap = await getDoc(issueRef);
-    const issueData = issueSnap.data();
-    
-    // Notify citizen
-    await createNotification({
-      userId: issueData.userId,
-      issueId: issueId,
-      title: 'Issue Assigned',
-      body: `Your issue has been assigned to ${officerName}`,
-      type: 'assigned'
-    });
-    
-    // Notify officer
-    await createNotification({
-      userId: officerId,
-      issueId: issueId,
-      title: 'New Issue Assigned',
-      body: `You have been assigned: ${issueData.title}`,
-      type: 'assigned'
-    });
-    
-    return { success: true };
-  } catch (error) {
-    console.error('❌ Error assigning issue:', error);
-    return { success: false, error: error.message };
-  }
-};
-
-export const resolveIssue = async (issueId, resolutionData) => {
-  try {
-    // Upload resolution proof photos
-    let proofUrls = [];
-    if (resolutionData.photos && resolutionData.photos.length > 0) {
-      const uploadResult = await uploadResolutionPhotos(resolutionData.photos);
-      if (!uploadResult.success) {
-        throw new Error('Failed to upload resolution photos');
-      }
-      proofUrls = uploadResult.urls;
-    }
-    
-    // Update issue
-    const issueRef = doc(db, 'issues', issueId);
-    await updateDoc(issueRef, {
-      resolutionProof: proofUrls,
-      resolutionNote: resolutionData.note || '',
-      status: 'resolved',
-      resolvedAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
-    });
-    
-    console.log(`✅ Issue ${issueId} resolved`);
-    
-    // Get issue data
-    const issueSnap = await getDoc(issueRef);
-    const issueData = issueSnap.data();
-    
-    // Notify user
-    await createNotification({
-      userId: issueData.userId,
-      issueId: issueId,
-      title: 'Issue Resolved! ✅',
-      body: `Your issue "${issueData.title}" has been resolved`,
-      type: 'resolved'
-    });
-    
-    return { success: true };
-  } catch (error) {
-    console.error('❌ Error resolving issue:', error);
-    return { success: false, error: error.message };
-  }
-};
-
-// ==================== REAL-TIME LISTENERS ====================
-
-export const subscribeToUserIssues = (userId, callback) => {
-  const issuesRef = collection(db, 'issues');
-  const q = query(
-    issuesRef,
-    where('userId', '==', userId),
-    orderBy('createdAt', 'desc')
-  );
-  
-  return onSnapshot(q, (snapshot) => {
-    const issues = [];
-    snapshot.forEach((doc) => {
-      const data = doc.data();
-      issues.push({ 
-        id: doc.id, 
-        ...data,
-        createdAt: data.createdAt?.toDate(),
-        updatedAt: data.updatedAt?.toDate(),
-        resolvedAt: data.resolvedAt?.toDate()
-      });
-    });
-    callback(issues);
-  }, (error) => {
-    console.error('❌ Error in issues listener:', error);
-  });
-};
-
-export const subscribeToIssue = (issueId, callback) => {
-  const issueRef = doc(db, 'issues', issueId);
-  
-  return onSnapshot(issueRef, (doc) => {
-    if (doc.exists()) {
-      const data = doc.data();
-      callback({ 
-        id: doc.id, 
-        ...data,
-        createdAt: data.createdAt?.toDate(),
-        updatedAt: data.updatedAt?.toDate(),
-        resolvedAt: data.resolvedAt?.toDate()
-      });
-    }
-  }, (error) => {
-    console.error('❌ Error in issue listener:', error);
-  });
-};
-
-export const subscribeToAllIssues = (callback, filters = {}) => {
-  const issuesRef = collection(db, 'issues');
-  let constraints = [orderBy('createdAt', 'desc')];
-  
-  if (filters.status) {
-    constraints.unshift(where('status', '==', filters.status));
-  }
-  
-  const q = query(issuesRef, ...constraints);
-  
-  return onSnapshot(q, (snapshot) => {
-    const issues = [];
-    snapshot.forEach((doc) => {
-      const data = doc.data();
-      issues.push({ 
-        id: doc.id, 
-        ...data,
-        createdAt: data.createdAt?.toDate(),
-        updatedAt: data.updatedAt?.toDate(),
-        resolvedAt: data.resolvedAt?.toDate()
-      });
-    });
-    callback(issues);
-  }, (error) => {
-    console.error('❌ Error in all issues listener:', error);
-  });
-};
-
-// ==================== NOTIFICATION SERVICES ====================
-
-export const createNotification = async (notificationData) => {
-  try {
-    const notificationsRef = collection(db, 'notifications');
-    await addDoc(notificationsRef, {
-      userId: notificationData.userId,
-      issueId: notificationData.issueId || null,
-      title: notificationData.title,
-      body: notificationData.body,
-      type: notificationData.type, // 'issue_created', 'status_update', 'assigned', 'resolved'
-      read: false,
-      createdAt: serverTimestamp()
-    });
-    
-    console.log('✅ Notification created');
-    return { success: true };
-  } catch (error) {
-    console.error('❌ Error creating notification:', error);
-    return { success: false, error: error.message };
-  }
-};
-
+/**
+ * Get user notifications
+ */
 export const getUserNotifications = async (userId) => {
   try {
-    const notificationsRef = collection(db, 'notifications');
     const q = query(
-      notificationsRef,
+      collection(db, 'notifications'),
       where('userId', '==', userId),
       orderBy('createdAt', 'desc'),
       limit(50)
     );
-    
+
     const querySnapshot = await getDocs(q);
-    const notifications = [];
-    
-    querySnapshot.forEach((doc) => {
-      const data = doc.data();
-      notifications.push({ 
-        id: doc.id, 
-        ...data,
-        createdAt: data.createdAt?.toDate()
-      });
-    });
-    
-    return { success: true, data: notifications };
+    const notifications = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      createdAt: convertTimestamp(doc.data().createdAt),
+    }));
+
+    return {
+      success: true,
+      data: notifications,
+    };
   } catch (error) {
     console.error('❌ Error getting notifications:', error);
-    return { success: false, error: error.message };
+    return {
+      success: false,
+      error: error.message,
+      data: [],
+    };
   }
 };
 
+/**
+ * Mark notification as read
+ */
 export const markNotificationAsRead = async (notificationId) => {
   try {
-    const notificationRef = doc(db, 'notifications', notificationId);
-    await updateDoc(notificationRef, {
-      read: true
+    const docRef = doc(db, 'notifications', notificationId);
+    await updateDoc(docRef, {
+      read: true,
+      readAt: serverTimestamp(),
     });
-    
+
     return { success: true };
   } catch (error) {
     console.error('❌ Error marking notification as read:', error);
-    return { success: false, error: error.message };
-  }
-};
-
-export const subscribeToUserNotifications = (userId, callback) => {
-  const notificationsRef = collection(db, 'notifications');
-  const q = query(
-    notificationsRef,
-    where('userId', '==', userId),
-    orderBy('createdAt', 'desc'),
-    limit(50)
-  );
-  
-  return onSnapshot(q, (snapshot) => {
-    const notifications = [];
-    snapshot.forEach((doc) => {
-      const data = doc.data();
-      notifications.push({ 
-        id: doc.id, 
-        ...data,
-        createdAt: data.createdAt?.toDate()
-      });
-    });
-    callback(notifications);
-  }, (error) => {
-    console.error('❌ Error in notifications listener:', error);
-  });
-};
-
-// ==================== DEPARTMENT SERVICES ====================
-
-export const getDepartments = async () => {
-  try {
-    const departmentsRef = collection(db, 'departments');
-    const querySnapshot = await getDocs(departmentsRef);
-    const departments = [];
-    
-    querySnapshot.forEach((doc) => {
-      departments.push({ id: doc.id, ...doc.data() });
-    });
-    
-    console.log(`✅ Found ${departments.length} departments`);
-    return { success: true, data: departments };
-  } catch (error) {
-    console.error('❌ Error getting departments:', error);
-    return { success: false, error: error.message };
-  }
-};
-
-export const createDepartment = async (departmentData) => {
-  try {
-    const departmentsRef = collection(db, 'departments');
-    const docRef = await addDoc(departmentsRef, {
-      name: departmentData.name,
-      description: departmentData.description || '',
-      categories: departmentData.categories || [],
-      officers: departmentData.officers || [],
-      createdAt: serverTimestamp()
-    });
-    
-    console.log('✅ Department created:', docRef.id);
-    return { success: true, departmentId: docRef.id };
-  } catch (error) {
-    console.error('❌ Error creating department:', error);
-    return { success: false, error: error.message };
-  }
-};
-
-// ==================== ANALYTICS SERVICES ====================
-
-export const getIssueStats = async () => {
-  try {
-    const issuesRef = collection(db, 'issues');
-    const querySnapshot = await getDocs(issuesRef);
-    
-    const stats = {
-      total: 0,
-      pending: 0,
-      assigned: 0,
-      inProgress: 0,
-      resolved: 0,
-      rejected: 0,
-      byCategory: {},
-      byPriority: {
-        low: 0,
-        medium: 0,
-        high: 0,
-        critical: 0
-      },
-      recentIssues: []
+    return {
+      success: false,
+      error: error.message,
     };
-    
-    querySnapshot.forEach((doc) => {
-      const data = doc.data();
-      stats.total++;
-      
-      // Count by status
-      if (data.status === 'pending') stats.pending++;
-      else if (data.status === 'assigned') stats.assigned++;
-      else if (data.status === 'in-progress') stats.inProgress++;
-      else if (data.status === 'resolved') stats.resolved++;
-      else if (data.status === 'rejected') stats.rejected++;
-      
-      // Count by category
-      if (data.category) {
-        stats.byCategory[data.category] = (stats.byCategory[data.category] || 0) + 1;
-      }
-      
-      // Count by priority
-      if (data.priority) {
-        stats.byPriority[data.priority]++;
-      }
-    });
-    
-    console.log('✅ Stats calculated:', stats);
-    return { success: true, data: stats };
-  } catch (error) {
-    console.error('❌ Error getting issue stats:', error);
-    return { success: false, error: error.message };
   }
 };
 
-export const getHotspots = async () => {
+/**
+ * Subscribe to user notifications
+ */
+export const subscribeToUserNotifications = (userId, callback) => {
   try {
-    const issuesRef = collection(db, 'issues');
-    const querySnapshot = await getDocs(issuesRef);
-    
-    const locationMap = {};
-    
-    querySnapshot.forEach((doc) => {
-      const data = doc.data();
-      if (data.location && data.location.address) {
-        const address = data.location.address;
-        locationMap[address] = (locationMap[address] || 0) + 1;
+    const q = query(
+      collection(db, 'notifications'),
+      where('userId', '==', userId),
+      orderBy('createdAt', 'desc'),
+      limit(50)
+    );
+
+    const unsubscribe = onSnapshot(q,
+      (snapshot) => {
+        const notifications = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          createdAt: convertTimestamp(doc.data().createdAt),
+        }));
+        callback(notifications);
+      },
+      (error) => {
+        console.error('❌ Error in notifications subscription:', error);
       }
-    });
-    
-    // Convert to array and sort by count
-    const hotspots = Object.entries(locationMap)
-      .map(([location, count]) => ({ location, count }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 10); // Top 10 hotspots
-    
-    return { success: true, data: hotspots };
+    );
+
+    return unsubscribe;
   } catch (error) {
-    console.error('❌ Error getting hotspots:', error);
-    return { success: false, error: error.message };
+    console.error('❌ Error setting up notifications subscription:', error);
+    return null;
   }
+};
+
+export default {
+  // Issue operations
+  createIssue,
+  getIssueById,
+  getUserIssues,
+  getAllIssues,
+  updateIssueStatus,
+  
+  // Real-time subscriptions
+  subscribeToIssue,
+  subscribeToUserIssues,
+  subscribeToAllIssues,
+  
+  // User operations
+  getUserProfile,
+  updateUserProfile,
+  
+  // Notification operations
+  getUserNotifications,
+  markNotificationAsRead,
+  subscribeToUserNotifications,
 };

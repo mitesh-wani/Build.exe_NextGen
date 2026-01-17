@@ -1,3 +1,4 @@
+// src/screens/IssueDetailScreen.js
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -14,10 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker } from 'react-native-maps';
-import { 
-  getIssueById,
-  subscribeToIssue, // ✅ Real-time updates
-} from '../services/firebaseServices'; // ✅ Import services
+import { getIssueById, subscribeToIssue } from '../services/firebaseServices'; // ✅ Use service
 import { 
   COLORS, 
   SIZES, 
@@ -34,38 +32,34 @@ export default function IssueDetailScreen({ route, navigation }) {
 
   useEffect(() => {
     fetchIssueDetails();
-
-    // ✅ Set up real-time listener for this specific issue
+    
+    // ✅ Set up real-time listener
     const unsubscribe = subscribeToIssue(issueId, (updatedIssue) => {
-      console.log('✅ Issue updated in real-time:', updatedIssue.id);
+      console.log('✅ Issue updated in real-time');
       setIssue(updatedIssue);
       setLoading(false);
     });
 
-    // ✅ Cleanup on unmount
+    // Cleanup listener
     return () => {
-      if (unsubscribe) {
-        unsubscribe();
-      }
+      if (unsubscribe) unsubscribe();
     };
   }, [issueId]);
 
   const fetchIssueDetails = async () => {
     try {
-      // ✅ Use service function
       const result = await getIssueById(issueId);
       
       if (result.success) {
-        console.log('✅ Issue fetched:', result.data.id);
         setIssue(result.data);
       } else {
-        console.error('❌ Issue not found:', result.error);
-        Alert.alert('Error', 'Issue not found');
+        Alert.alert('Error', result.error || 'Issue not found');
         navigation.goBack();
       }
     } catch (error) {
       console.error('❌ Error fetching issue:', error);
       Alert.alert('Error', 'Failed to load issue details');
+      navigation.goBack();
     } finally {
       setLoading(false);
     }
@@ -73,7 +67,6 @@ export default function IssueDetailScreen({ route, navigation }) {
 
   const openInMaps = () => {
     if (issue?.location) {
-      // ✅ Service returns location with lat/lng, not latitude/longitude
       const { lat, lng } = issue.location;
       const url = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
       Linking.openURL(url);
@@ -83,17 +76,16 @@ export default function IssueDetailScreen({ route, navigation }) {
   const handleShare = async () => {
     try {
       await Share.share({
-        message: `Check out this community issue: ${issue?.title || issue?.category}\n\nLocation: ${issue?.location?.address || 'Location shared'}\n\nDescription: ${issue?.description}`,
+        message: `Check out this community issue: ${issue?.title || issue?.category}\n\nLocation: ${issue?.location?.address}\n\nDescription: ${issue?.description}`,
         title: 'Share Issue',
       });
     } catch (error) {
-      console.error('❌ Share error:', error);
+      console.error('Share error:', error);
     }
   };
 
   const formatDate = (timestamp) => {
     if (!timestamp) return 'N/A';
-    // ✅ Service already converts to JS Date
     const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
     return date.toLocaleDateString('en-US', { 
       month: 'short', 
@@ -104,7 +96,6 @@ export default function IssueDetailScreen({ route, navigation }) {
 
   const formatDateTime = (timestamp) => {
     if (!timestamp) return 'N/A';
-    // ✅ Service already converts to JS Date
     const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
     return date.toLocaleString('en-US', { 
       month: 'short', 
@@ -137,8 +128,8 @@ export default function IssueDetailScreen({ route, navigation }) {
   const currentStatus = ISSUE_STATUS[issue?.status?.toUpperCase()] || ISSUE_STATUS.PENDING;
   const currentPriority = PRIORITY_LEVELS[issue?.priority?.toUpperCase()] || PRIORITY_LEVELS.MEDIUM;
 
-  // ✅ Service returns 'photos' array, not 'imageUrl'
-  const imageUrl = issue?.photos && issue.photos.length > 0 ? issue.photos[0] : null;
+  // ✅ Get first photo from photos array
+  const imageUrl = issue.photos && issue.photos.length > 0 ? issue.photos[0] : null;
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -218,36 +209,6 @@ export default function IssueDetailScreen({ route, navigation }) {
             <Text style={styles.description}>{issue?.description}</Text>
           </View>
 
-          {/* Reporter Info Card - NEW */}
-          {issue?.userName && (
-            <View style={styles.card}>
-              <View style={styles.cardHeader}>
-                <Ionicons name="person" size={20} color={COLORS.primary} />
-                <Text style={styles.cardTitle}>Reported By</Text>
-              </View>
-              <View style={styles.reporterInfo}>
-                <Text style={styles.reporterName}>{issue.userName}</Text>
-                {issue.userPhone && (
-                  <Text style={styles.reporterPhone}>{issue.userPhone}</Text>
-                )}
-              </View>
-            </View>
-          )}
-
-          {/* Assigned Officer Info - NEW */}
-          {issue?.assignedOfficerName && (
-            <View style={styles.card}>
-              <View style={styles.cardHeader}>
-                <Ionicons name="people" size={20} color={COLORS.warning} />
-                <Text style={styles.cardTitle}>Assigned To</Text>
-              </View>
-              <View style={styles.reporterInfo}>
-                <Text style={styles.reporterName}>{issue.assignedOfficerName}</Text>
-                <Text style={styles.reporterPhone}>Handling this issue</Text>
-              </View>
-            </View>
-          )}
-
           {/* Location Card */}
           <View style={styles.card}>
             <View style={styles.cardHeader}>
@@ -260,13 +221,11 @@ export default function IssueDetailScreen({ route, navigation }) {
                 <Ionicons name="navigate" size={20} color={COLORS.primary} />
               </View>
               <View style={{ flex: 1 }}>
-                {/* ✅ Use location.address from service structure */}
                 <Text style={styles.addressText} numberOfLines={2}>
                   {issue?.location?.address || 'Location shared'}
                 </Text>
                 {issue?.location && (
                   <Text style={styles.coordsText}>
-                    {/* ✅ Use lat/lng from service structure */}
                     {issue.location.lat.toFixed(5)}, {issue.location.lng.toFixed(5)}
                   </Text>
                 )}
@@ -279,7 +238,6 @@ export default function IssueDetailScreen({ route, navigation }) {
                 <MapView
                   style={styles.map}
                   initialRegion={{
-                    // ✅ Use lat/lng from service structure
                     latitude: issue.location.lat,
                     longitude: issue.location.lng,
                     latitudeDelta: 0.005,
@@ -292,7 +250,6 @@ export default function IssueDetailScreen({ route, navigation }) {
                 >
                   <Marker 
                     coordinate={{
-                      // ✅ Map expects latitude/longitude
                       latitude: issue.location.lat,
                       longitude: issue.location.lng,
                     }}
@@ -310,39 +267,6 @@ export default function IssueDetailScreen({ route, navigation }) {
             )}
           </View>
 
-          {/* AI Analysis Card - NEW */}
-          {issue?.aiAnalysis && (
-            <View style={styles.card}>
-              <View style={styles.cardHeader}>
-                <Ionicons name="sparkles" size={20} color={COLORS.secondary} />
-                <Text style={styles.cardTitle}>AI Analysis</Text>
-              </View>
-              <Text style={styles.description}>{issue.aiAnalysis}</Text>
-            </View>
-          )}
-
-          {/* Resolution Proof Card - NEW */}
-          {issue?.resolutionProof && issue.resolutionProof.length > 0 && (
-            <View style={styles.card}>
-              <View style={styles.cardHeader}>
-                <Ionicons name="checkmark-done" size={20} color={COLORS.success} />
-                <Text style={styles.cardTitle}>Resolution Proof</Text>
-              </View>
-              {issue.resolutionNote && (
-                <Text style={styles.description}>{issue.resolutionNote}</Text>
-              )}
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.proofImages}>
-                {issue.resolutionProof.map((url, index) => (
-                  <Image 
-                    key={index} 
-                    source={{ uri: url }} 
-                    style={styles.proofImage}
-                  />
-                ))}
-              </ScrollView>
-            </View>
-          )}
-
           {/* Timeline Card */}
           <View style={styles.card}>
             <View style={styles.cardHeader}>
@@ -356,29 +280,28 @@ export default function IssueDetailScreen({ route, navigation }) {
                 title="Issue Reported" 
                 date={issue?.createdAt}
                 dateFormatter={formatDateTime}
-                isLast={!issue?.assignedTo && issue?.status === 'pending'} 
+                isLast={!issue?.assignedAt && issue?.status !== 'resolved'} 
                 completed 
                 color={COLORS.primary}
               />
-              {issue?.assignedTo && (
+              {issue?.assignedAt && (
                 <TimelineItem 
                   icon="people"
                   title="Assigned to Team" 
-                  subtitle={issue.assignedOfficerName}
-                  date={issue.updatedAt}
+                  date={issue.assignedAt}
                   dateFormatter={formatDateTime}
-                  isLast={issue.status === 'assigned'} 
+                  isLast={issue.status !== 'resolved' && issue.status !== 'in_progress'} 
                   completed 
                   color={COLORS.warning}
                 />
               )}
-              {issue?.status === 'in-progress' && (
+              {issue?.status === 'in_progress' && (
                 <TimelineItem 
                   icon="hammer"
                   title="Work in Progress" 
-                  date={issue.updatedAt}
+                  date={issue.inProgressAt || issue.assignedAt}
                   dateFormatter={formatDateTime}
-                  isLast={true} 
+                  isLast={issue.status !== 'resolved'} 
                   completed 
                   color={COLORS.info}
                 />
@@ -387,14 +310,14 @@ export default function IssueDetailScreen({ route, navigation }) {
                 <TimelineItem 
                   icon="checkmark-circle"
                   title="Resolved" 
-                  date={issue.resolvedAt}
+                  date={issue.resolvedAt || issue.updatedAt}
                   dateFormatter={formatDateTime}
                   isLast={true} 
                   completed 
                   color={COLORS.success}
                 />
               )}
-              {issue?.status === 'pending' && !issue?.assignedTo && (
+              {issue?.status === 'pending' && (
                 <TimelineItem 
                   icon="hourglass-outline"
                   title="Awaiting Review" 
@@ -435,8 +358,8 @@ export default function IssueDetailScreen({ route, navigation }) {
   );
 }
 
-// Enhanced Timeline Component
-const TimelineItem = ({ icon, title, subtitle, date, dateFormatter, isLast, completed, color }) => (
+// Timeline Component
+const TimelineItem = ({ icon, title, date, dateFormatter, isLast, completed, color }) => (
   <View style={styles.timelineItem}>
     <View style={styles.timelineLeft}>
       <View style={[styles.dot, { 
@@ -454,9 +377,6 @@ const TimelineItem = ({ icon, title, subtitle, date, dateFormatter, isLast, comp
       <Text style={[styles.timelineTitle, !completed && { color: COLORS.gray[400] }]}>
         {title}
       </Text>
-      {subtitle && (
-        <Text style={styles.timelineSubtitle}>{subtitle}</Text>
-      )}
       {date && (
         <Text style={styles.timelineDate}>{dateFormatter(date)}</Text>
       )}
@@ -646,30 +566,6 @@ const styles = StyleSheet.create({
     color: COLORS.gray[700],
     lineHeight: 24,
   },
-  reporterInfo: {
-    backgroundColor: COLORS.gray[50],
-    padding: SPACING.md,
-    borderRadius: BORDER_RADIUS.lg,
-  },
-  reporterName: {
-    fontSize: SIZES.md,
-    fontWeight: '700',
-    color: COLORS.dark,
-    marginBottom: 4,
-  },
-  reporterPhone: {
-    fontSize: SIZES.sm,
-    color: COLORS.gray[600],
-  },
-  proofImages: {
-    marginTop: SPACING.md,
-  },
-  proofImage: {
-    width: 120,
-    height: 120,
-    borderRadius: BORDER_RADIUS.lg,
-    marginRight: SPACING.sm,
-  },
   locationCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -769,11 +665,6 @@ const styles = StyleSheet.create({
     fontSize: SIZES.md, 
     fontWeight: '700', 
     color: COLORS.dark,
-    marginBottom: 4,
-  },
-  timelineSubtitle: {
-    fontSize: SIZES.sm,
-    color: COLORS.gray[600],
     marginBottom: 4,
   },
   timelineDate: { 

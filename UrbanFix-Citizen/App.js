@@ -1,8 +1,10 @@
 // App.js
-import React, { useEffect } from 'react';
+import { React,useEffect } from 'react';
+
 import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
 import AppNavigator from './src/navigation/AppNavigator';
+
 
 // Configure notification behavior
 Notifications.setNotificationHandler({

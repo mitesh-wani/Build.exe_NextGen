@@ -1,373 +1,493 @@
 // src/screens/ProfileScreen.js
 import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  TouchableOpacity, 
   Alert,
+  ScrollView,
   ActivityIndicator,
-  Image,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { signOut } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../services/firebase';
-
-// Import theme constants (adjust path if needed)
+import { auth } from '../services/firebase';
+import { getUserProfile } from '../services/firebaseServices'; // ✅ Use service
 import { COLORS, SPACING, BORDER_RADIUS, SIZES } from '../constants/theme';
 
-export default function ProfileScreen() {
-  const [userProfile, setUserProfile] = useState(null);
+export default function ProfileScreen({ navigation }) {
+  const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchUserProfile();
+    fetchProfile();
   }, []);
 
-  const fetchUserProfile = async () => {
+  const fetchProfile = async () => {
     try {
       const userId = auth.currentUser?.uid;
-      if (!userId) return;
+      if (!userId) {
+        setLoading(false);
+        return;
+      }
 
-      const userDocRef = doc(db, 'users', userId);
-      const userDoc = await getDoc(userDocRef);
-
-      if (userDoc.exists()) {
-        setUserProfile(userDoc.data());
+      const result = await getUserProfile(userId);
+      
+      if (result.success) {
+        setProfile(result.data);
+        console.log('✅ Profile loaded:', result.data.displayName);
       } else {
-        console.log('No user document found');
+        console.error('❌ Profile fetch failed:', result.error);
+        // Set basic profile from auth if Firestore profile doesn't exist
+        setProfile({
+          displayName: auth.currentUser.displayName || 'User',
+          email: auth.currentUser.email,
+          role: 'citizen',
+        });
       }
     } catch (error) {
-      console.error('Error fetching profile:', error);
-      Alert.alert('Error', 'Failed to load profile data');
+      console.error('❌ Error fetching profile:', error);
+      setProfile({
+        displayName: 'User',
+        email: auth.currentUser?.email || '',
+        role: 'citizen',
+      });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleLogout = () => {
+  const handleSignOut = () => {
     Alert.alert(
-      'Logout',
+      'Sign Out',
       'Are you sure you want to sign out?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Logout',
+          text: 'Sign Out',
           style: 'destructive',
           onPress: async () => {
             try {
               await signOut(auth);
-              // Expo Router will automatically redirect to login (if configured)
+              console.log('✅ User signed out');
             } catch (error) {
-              Alert.alert('Error', 'Failed to sign out. Please try again.');
+              console.error('❌ Sign out error:', error);
+              Alert.alert('Error', 'Failed to sign out');
             }
           },
         },
-      ],
-      { cancelable: true }
+      ]
     );
-  };
-
-  const getInitials = (name) => {
-    if (!name) return 'U';
-    const names = name.trim().split(' ');
-    if (names.length >= 2) {
-      return (names[0][0] + names[1][0]).toUpperCase();
-    }
-    return name[0].toUpperCase();
   };
 
   if (loading) {
     return (
-      <View style={styles.center}>
+      <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Loading profile...</Text>
       </View>
     );
   }
 
+  const initials = profile?.displayName?.[0]?.toUpperCase() || 'U';
+
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-      {/* Profile Header */}
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
+      {/* Header */}
       <View style={styles.header}>
-        <View style={styles.avatarContainer}>
-          {/* Future: replace with userProfile?.photoURL ? <Image ... /> : ... */}
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>
-              {getInitials(userProfile?.name)}
+        <TouchableOpacity 
+          style={styles.backBtn} 
+          onPress={() => navigation.goBack()}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="arrow-back" size={24} color={COLORS.white} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Profile</Text>
+        <View style={styles.headerRight} />
+      </View>
+
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+        {/* Profile Header */}
+        <View style={styles.profileHeader}>
+          <View style={styles.avatarContainer}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{initials}</Text>
+            </View>
+            <View style={styles.statusBadge}>
+              <Ionicons name="checkmark-circle" size={20} color={COLORS.success} />
+            </View>
+          </View>
+          
+          <Text style={styles.name}>{profile?.displayName || 'User'}</Text>
+          <Text style={styles.email}>{profile?.email || auth.currentUser?.email}</Text>
+          
+          <View style={styles.roleBadge}>
+            <Ionicons name="person" size={14} color={COLORS.primary} />
+            <Text style={styles.roleText}>
+              {profile?.role === 'citizen' ? 'Citizen' : 'Authority'}
             </Text>
           </View>
         </View>
 
-        <Text style={styles.name}>
-          {userProfile?.name || 'Welcome'}
-        </Text>
-        <Text style={styles.email}>
-          {userProfile?.email || auth.currentUser?.email || 'No email'}
-        </Text>
+        {/* Profile Info Cards */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Account Information</Text>
+          
+          <View style={styles.infoCard}>
+            <View style={styles.infoRow}>
+              <View style={styles.infoIcon}>
+                <Ionicons name="person-outline" size={20} color={COLORS.primary} />
+              </View>
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Full Name</Text>
+                <Text style={styles.infoValue}>{profile?.displayName || 'Not set'}</Text>
+              </View>
+            </View>
 
-        <View style={styles.badge}>
-          <Ionicons name="shield-checkmark" size={16} color={COLORS.success} />
-          <Text style={styles.badgeText}>Verified Citizen</Text>
+            <View style={styles.divider} />
+
+            <View style={styles.infoRow}>
+              <View style={styles.infoIcon}>
+                <Ionicons name="mail-outline" size={20} color={COLORS.primary} />
+              </View>
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Email</Text>
+                <Text style={styles.infoValue}>{profile?.email || 'Not set'}</Text>
+              </View>
+            </View>
+
+            {profile?.phone && (
+              <>
+                <View style={styles.divider} />
+                <View style={styles.infoRow}>
+                  <View style={styles.infoIcon}>
+                    <Ionicons name="call-outline" size={20} color={COLORS.primary} />
+                  </View>
+                  <View style={styles.infoContent}>
+                    <Text style={styles.infoLabel}>Phone</Text>
+                    <Text style={styles.infoValue}>{profile.phone}</Text>
+                  </View>
+                </View>
+              </>
+            )}
+
+            <View style={styles.divider} />
+
+            <View style={styles.infoRow}>
+              <View style={styles.infoIcon}>
+                <Ionicons name="calendar-outline" size={20} color={COLORS.primary} />
+              </View>
+              <View style={styles.infoContent}>
+                <Text style={styles.infoLabel}>Member Since</Text>
+                <Text style={styles.infoValue}>
+                  {profile?.createdAt 
+                    ? new Date(profile.createdAt).toLocaleDateString('en-US', {
+                        month: 'long',
+                        year: 'numeric'
+                      })
+                    : 'Recently'
+                  }
+                </Text>
+              </View>
+            </View>
+          </View>
         </View>
-      </View>
 
-      {/* Sections */}
-      <View style={styles.sectionCard}>
-        <Text style={styles.sectionTitle}>Account</Text>
+        {/* Actions */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Actions</Text>
 
-        <TouchableOpacity style={styles.menuItem} activeOpacity={0.7}>
-          <View style={styles.menuLeft}>
-            <Ionicons name="person-outline" size={24} color={COLORS.gray[600]} />
-            <Text style={styles.menuText}>Edit Profile</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={22} color={COLORS.gray[400]} />
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => navigation.navigate('MyIssues')}
+            activeOpacity={0.7}
+          >
+            <View style={styles.actionIcon}>
+              <Ionicons name="document-text-outline" size={22} color={COLORS.primary} />
+            </View>
+            <Text style={styles.actionText}>My Reports</Text>
+            <Ionicons name="chevron-forward" size={20} color={COLORS.gray[400]} />
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => Alert.alert('Coming Soon', 'Settings feature coming soon!')}
+            activeOpacity={0.7}
+          >
+            <View style={styles.actionIcon}>
+              <Ionicons name="settings-outline" size={22} color={COLORS.primary} />
+            </View>
+            <Text style={styles.actionText}>Settings</Text>
+            <Ionicons name="chevron-forward" size={20} color={COLORS.gray[400]} />
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => Alert.alert('Help & Support', 'For support, contact: support@urbanfix.com')}
+            activeOpacity={0.7}
+          >
+            <View style={styles.actionIcon}>
+              <Ionicons name="help-circle-outline" size={22} color={COLORS.primary} />
+            </View>
+            <Text style={styles.actionText}>Help & Support</Text>
+            <Ionicons name="chevron-forward" size={20} color={COLORS.gray[400]} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Sign Out Button */}
+        <TouchableOpacity 
+          style={styles.signOutButton} 
+          onPress={handleSignOut}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="log-out-outline" size={22} color={COLORS.white} />
+          <Text style={styles.signOutText}>Sign Out</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.menuItem} activeOpacity={0.7}>
-          <View style={styles.menuLeft}>
-            <Ionicons name="call-outline" size={24} color={COLORS.gray[600]} />
-            <Text style={styles.menuText}>Phone Number</Text>
-          </View>
-          <View style={styles.menuRight}>
-            <Text style={styles.menuValue}>
-              {userProfile?.phone || 'Not set'}
-            </Text>
-            <Ionicons name="chevron-forward" size={22} color={COLORS.gray[400]} />
-          </View>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.sectionCard}>
-        <Text style={styles.sectionTitle}>Preferences</Text>
-
-        <TouchableOpacity style={styles.menuItem} activeOpacity={0.7}>
-          <View style={styles.menuLeft}>
-            <Ionicons name="notifications-outline" size={24} color={COLORS.gray[600]} />
-            <Text style={styles.menuText}>Notifications</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={22} color={COLORS.gray[400]} />
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.menuItem} activeOpacity={0.7}>
-          <View style={styles.menuLeft}>
-            <Ionicons name="language-outline" size={24} color={COLORS.gray[600]} />
-            <Text style={styles.menuText}>Language</Text>
-          </View>
-          <View style={styles.menuRight}>
-            <Text style={styles.menuValue}>English</Text>
-            <Ionicons name="chevron-forward" size={22} color={COLORS.gray[400]} />
-          </View>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.sectionCard}>
-        <Text style={styles.sectionTitle}>Support</Text>
-
-        <TouchableOpacity style={styles.menuItem} activeOpacity={0.7}>
-          <View style={styles.menuLeft}>
-            <Ionicons name="help-circle-outline" size={24} color={COLORS.gray[600]} />
-            <Text style={styles.menuText}>Help & Support</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={22} color={COLORS.gray[400]} />
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.menuItem} activeOpacity={0.7}>
-          <View style={styles.menuLeft}>
-            <Ionicons name="document-text-outline" size={24} color={COLORS.gray[600]} />
-            <Text style={styles.menuText}>Terms & Conditions</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={22} color={COLORS.gray[400]} />
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.menuItem} activeOpacity={0.7}>
-          <View style={styles.menuLeft}>
-            <Ionicons name="shield-outline" size={24} color={COLORS.gray[600]} />
-            <Text style={styles.menuText}>Privacy Policy</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={22} color={COLORS.gray[400]} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Logout */}
-      <TouchableOpacity
-        style={styles.logoutButton}
-        activeOpacity={0.8}
-        onPress={handleLogout}
-      >
-        <Ionicons name="log-out-outline" size={24} color={COLORS.danger} />
-        <Text style={styles.logoutText}>Sign Out</Text>
-      </TouchableOpacity>
-
-      {/* Footer */}
-      <View style={styles.footer}>
-        <Text style={styles.footerText}>Made with ❤️ by Team NextGen</Text>
-        <Text style={styles.footerSubtext}>UrbanFix • v1.0.0</Text>
-      </View>
-
-      {/* Bottom safe area */}
-      <View style={{ height: SPACING.xxl }} />
-    </ScrollView>
+        <Text style={styles.version}>UrbanFix v1.0.0</Text>
+        
+        <View style={{ height: 40 }} />
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: COLORS.primary,
+  },
   container: {
     flex: 1,
-    backgroundColor: COLORS.gray[100],
+    backgroundColor: COLORS.gray[50],
   },
-  center: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: COLORS.gray[100],
+  content: {
+    paddingHorizontal: SPACING.lg,
   },
 
   header: {
-    backgroundColor: COLORS.white,
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingTop: 60,
-    paddingBottom: SPACING.xl,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.gray[200],
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.lg,
+    justifyContent: 'space-between',
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: BORDER_RADIUS.full,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerRight: {
+    width: 40,
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: COLORS.white,
+    letterSpacing: 0.3,
+  },
+
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.white,
+  },
+  loadingText: {
+    marginTop: SPACING.md,
+    color: COLORS.gray[500],
+    fontSize: SIZES.md,
+  },
+
+  profileHeader: {
+    alignItems: 'center',
+    paddingVertical: SPACING.xxl,
+    backgroundColor: COLORS.white,
+    borderRadius: BORDER_RADIUS.xl,
+    marginTop: SPACING.lg,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   avatarContainer: {
-    marginBottom: SPACING.lg,
+    position: 'relative',
+    marginBottom: SPACING.md,
   },
   avatar: {
-    width: 110,
-    height: 110,
-    borderRadius: 55,
+    width: 100,
+    height: 100,
+    borderRadius: BORDER_RADIUS.full,
     backgroundColor: COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 4,
     borderColor: COLORS.white,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 6,
   },
   avatarText: {
-    fontSize: 48,
-    fontWeight: '700',
+    fontSize: 40,
     color: COLORS.white,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  statusBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: COLORS.white,
+    borderRadius: BORDER_RADIUS.full,
+    padding: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   name: {
-    fontSize: 26,
-    fontWeight: '700',
+    fontSize: 24,
+    fontWeight: '800',
     color: COLORS.dark,
     marginBottom: 4,
   },
   email: {
-    fontSize: SIZES.md,
     color: COLORS.gray[600],
+    fontSize: SIZES.md,
     marginBottom: SPACING.md,
   },
-  badge: {
+  roleBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.success + '15',
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.sm,
+    backgroundColor: COLORS.primary + '15',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
     borderRadius: BORDER_RADIUS.full,
-    gap: SPACING.sm,
+    gap: 6,
   },
-  badgeText: {
+  roleText: {
+    color: COLORS.primary,
     fontSize: SIZES.sm,
-    color: COLORS.success,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+
+  section: {
+    marginTop: SPACING.xl,
+  },
+  sectionTitle: {
+    fontSize: SIZES.lg,
+    fontWeight: '700',
+    color: COLORS.dark,
+    marginBottom: SPACING.md,
+    paddingHorizontal: SPACING.xs,
+  },
+
+  infoCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: BORDER_RADIUS.xl,
+    padding: SPACING.md,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: SPACING.sm,
+  },
+  infoIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: BORDER_RADIUS.full,
+    backgroundColor: COLORS.primary + '15',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: SPACING.md,
+  },
+  infoContent: {
+    flex: 1,
+  },
+  infoLabel: {
+    fontSize: SIZES.xs,
+    color: COLORS.gray[500],
+    marginBottom: 2,
+    fontWeight: '600',
+  },
+  infoValue: {
+    fontSize: SIZES.md,
+    color: COLORS.dark,
+    fontWeight: '600',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: COLORS.gray[100],
+    marginVertical: SPACING.xs,
+  },
+
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.white,
+    padding: SPACING.md,
+    borderRadius: BORDER_RADIUS.lg,
+    marginBottom: SPACING.sm,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  actionIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: BORDER_RADIUS.full,
+    backgroundColor: COLORS.primary + '15',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: SPACING.md,
+  },
+  actionText: {
+    flex: 1,
+    fontSize: SIZES.md,
+    color: COLORS.dark,
     fontWeight: '600',
   },
 
-  sectionCard: {
-    backgroundColor: COLORS.white,
-    marginHorizontal: SPACING.md,
-    marginTop: SPACING.md,
-    borderRadius: BORDER_RADIUS.lg,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  sectionTitle: {
-    fontSize: SIZES.sm,
-    fontWeight: '700',
-    color: COLORS.gray[500],
-    paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.md,
-    paddingBottom: SPACING.xs,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: SPACING.lg,
-    paddingHorizontal: SPACING.lg,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: COLORS.gray[200],
-  },
-  menuLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.lg,
-    flex: 1,
-  },
-  menuText: {
-    fontSize: SIZES.lg,
-    color: COLORS.dark,
-    fontWeight: '500',
-  },
-  menuRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.md,
-  },
-  menuValue: {
-    fontSize: SIZES.md,
-    color: COLORS.gray[600],
-  },
-
-  logoutButton: {
+  signOutButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: COLORS.white,
-    marginHorizontal: SPACING.md,
+    backgroundColor: COLORS.danger,
+    paddingVertical: SPACING.lg,
+    borderRadius: BORDER_RADIUS.xl,
     marginTop: SPACING.xl,
-    marginBottom: SPACING.md,
-    paddingVertical: SPACING.xl,
-    borderRadius: BORDER_RADIUS.lg,
-    gap: SPACING.md,
+    gap: SPACING.sm,
     shadowColor: COLORS.danger,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  logoutText: {
+  signOutText: {
+    color: COLORS.white,
     fontSize: SIZES.lg,
-    fontWeight: '600',
-    color: COLORS.danger,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
 
-  footer: {
-    alignItems: 'center',
-    paddingVertical: SPACING.xl,
-  },
-  footerText: {
-    fontSize: SIZES.md,
-    color: COLORS.gray[500],
-    fontWeight: '500',
-  },
-  footerSubtext: {
-    fontSize: SIZES.sm,
+  version: {
+    textAlign: 'center',
     color: COLORS.gray[400],
-    marginTop: SPACING.xs,
+    fontSize: SIZES.sm,
+    marginTop: SPACING.xl,
+    fontWeight: '500',
   },
 });
