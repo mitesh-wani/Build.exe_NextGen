@@ -1,15 +1,16 @@
+// FILE: src/pages/Issues.js
 import React, { useEffect, useState } from 'react';
-import { db } from '../firebase';
+import { db } from '../firebase'; // Ensure this path is correct for your project
 import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
-import IssueCard from "../components/IssueCard";
-import { Box, Typography, CircularProgress, Alert } from "@mui/material";
+import IssueCard from "../components/IssueCard"; // Importing the card component
+import { Box, Typography, CircularProgress, Alert, Grid } from "@mui/material";
 
 export default function Issues() {
   const [issues, setIssues] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Real-time listener for issues
   useEffect(() => {
+    // Query issues sorted by newest first
     const q = query(collection(db, "issues"), orderBy("createdAt", "desc"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setIssues(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
@@ -35,15 +36,13 @@ export default function Issues() {
       {issues.length === 0 ? (
         <Alert severity="info">No issues have been reported yet.</Alert>
       ) : (
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
-          gap: "24px"
-        }}>
-          {issues.map(issue => (
-            <IssueCard key={issue.id} issue={issue} />
+        <Grid container spacing={3}>
+          {issues.map((issue) => (
+            <Grid item xs={12} sm={6} md={4} key={issue.id}>
+              <IssueCard issue={issue} />
+            </Grid>
           ))}
-        </div>
+        </Grid>
       )}
     </Box>
   );

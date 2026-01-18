@@ -1,7 +1,7 @@
 export default function Topbar() {
     return (
       <div style={{
-        background: "white",
+        background: "#566789ff",
         padding: "15px 20px",
         display: "flex",
         justifyContent: "space-between",

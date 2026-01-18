@@ -14,8 +14,9 @@ export default function Sidebar() {
 
       <nav style={{ marginTop: "30px", display: "flex", flexDirection: "column", gap: "15px" }}>
         <Link to="/admin" style={{ color: "white", textDecoration: "none" }}>📊 Dashboard</Link>
-        <Link to="/admin/issues" style={{ color: "white", textDecoration: "none" }}>📥 Issues</Link>
         <Link to="/admin/map" style={{ color: "white", textDecoration: "none" }}>🗺️ Map</Link>
+        <Link to="/admin/issues" style={{ color: "white", textDecoration: "none" }}>📥 Issues</Link>
+       
         <Link to="/admin/analytics" style={{ color: "white", textDecoration: "none" }}>📈 Analytics</Link>
       </nav>
     </div>

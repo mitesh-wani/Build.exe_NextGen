@@ -3,6 +3,8 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-d
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "./firebase";
 import { CircularProgress, Box } from "@mui/material";
+import Contact from "./pages/Contact";
+
 
 // Common Components
 import Header from "./components/Header";
@@ -50,6 +52,8 @@ function App() {
         {/* ===== PUBLIC ROUTES ===== */}
         <Route path="/" element={<LandingPage />} />
         <Route path="/report" element={<CitizenReport />} />
+        <Route path="/contact" element={<Contact />} />
+
         <Route path="/login" element={!user ? <Login /> : <Navigate to="/admin" />} />
         <Route path="/signup" element={!user ? <Signup /> : <Navigate to="/admin" />} />
 

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { AppBar, Toolbar, Typography, Button, Box, Container } from '@mui/material';
-import { Link, useNavigate, useLocation } from 'react-router-dom'; // Added useLocation
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { auth } from '../firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import ConstructionIcon from '@mui/icons-material/Construction';
@@ -8,7 +8,7 @@ import ConstructionIcon from '@mui/icons-material/Construction';
 function Header() {
   const [user, setUser] = useState(null);
   const navigate = useNavigate();
-  const location = useLocation(); // Hook to get current page path
+  const location = useLocation();
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -53,7 +53,11 @@ function Header() {
 
           <Box sx={{ display: 'flex', gap: 2 }}>
             <Button component={Link} to="/" color="inherit">Home</Button>
-            <Button component={Link} to="/report" color="inherit">Report Issue</Button>
+            
+            
+            {/* --- NEW ADDITION HERE --- */}
+            <Button component={Link} to="/contact" color="inherit">Contact Us</Button>
+            {/* ------------------------- */}
             
             {user ? (
               <>
