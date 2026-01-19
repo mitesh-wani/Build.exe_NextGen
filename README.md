@@ -95,6 +95,7 @@ Used for:
 
 ### 📱 Frontend:
 - React Native (Expo)
+- React JS
 - JavaScript
 
 ### 🔥 Backend:
