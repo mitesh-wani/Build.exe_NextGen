@@ -136,6 +136,7 @@ Used for:
 ## 🚀 Future Scope
 
 - City heatmap of issues
+- Complete Cloud-Native Architecture
 - Auto department assignment
 - Analytics dashboard
 - Government system integration
